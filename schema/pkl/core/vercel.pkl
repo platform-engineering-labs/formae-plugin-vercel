@@ -121,7 +121,11 @@ class Project extends formae.Resource {
     /// Node.js runtime version, e.g. "22.x". Applied by update — the documented
     /// create body does not accept it, so a freshly created project keeps the
     /// account default until the first reconcile.
-    @formae.FieldHint {}
+    ///
+    /// `hasProviderDefault` because Vercel always returns a value here even
+    /// when the forma sets none. Without the hint, conformance rejects the read
+    /// state as carrying a property the forma never asked for.
+    @formae.FieldHint { hasProviderDefault = true }
     nodeVersion: String? = null
 }
 
