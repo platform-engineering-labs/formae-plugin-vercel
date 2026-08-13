@@ -109,6 +109,97 @@ config = new vercel.Config {
 - `EnvironmentVariable.key`: **not** create-only — `PATCH .../env/{id}` accepts `key`, and
   Terraform does not mark it force-new either.
 
+## Parity matrix — all 50 Terraform provider resources
+
+The goal is 1:1 coverage of `vercel/terraform-provider-vercel`. Status counted
+2026-08-13.
+
+**Implemented: 8 / 50.**
+
+Legend — **done**: implemented and unit-tested · **engine**: fits
+`pkg/resources/rest`, needs its API request body confirmed and then declared ·
+**custom**: needs hand-written Go, the engine's shape does not fit ·
+**blocked**: cannot be modelled faithfully yet, reason given.
+
+| # | Terraform resource | Formae type | Status |
+|---|---|---|---|
+| 1 | `vercel_project` | `VERCEL::Projects::Project` | **done** (hand-written) |
+| 2 | `vercel_project_environment_variable` | `VERCEL::Projects::EnvironmentVariable` | **done** (hand-written) |
+| 3 | `vercel_custom_environment` | `VERCEL::Projects::CustomEnvironment` | **done** (engine) |
+| 4 | `vercel_project_domain` | `VERCEL::Projects::Domain` | **done** (engine) |
+| 5 | `vercel_dns_record` | `VERCEL::DNS::Record` | **done** (engine) |
+| 6 | `vercel_edge_config` | `VERCEL::GlobalConfig::Config` | **done** (engine) |
+| 7 | `vercel_webhook` | `VERCEL::Webhooks::Webhook` | **done** (engine) |
+| 8 | `vercel_network` | `VERCEL::Networking::Network` | **done** (engine) — create is async and not yet polled |
+| 9 | `vercel_access_group` | `VERCEL::AccessGroups::AccessGroup` | engine — update is `POST /v1/access-groups/{id}`, not PATCH |
+| 10 | `vercel_access_group_project` | `VERCEL::AccessGroups::ProjectAssignment` | engine (`ScopeParent`, id = projectId) |
+| 11 | `vercel_user_token` | `VERCEL::Auth::Token` | engine, `NoUpdate`; token value is returned once, at create |
+| 12 | `vercel_vcr_repository` | `VERCEL::VCR::Repository` | engine |
+| 13 | `vercel_custom_certificate` | `VERCEL::Certs::Certificate` | engine, `NoUpdate`; three PEM fields, all write-only |
+| 14 | `vercel_blob_store` | `VERCEL::Storage::BlobStore` | engine; no documented list endpoint, so discovery may be impossible |
+| 15 | `vercel_alias` | `VERCEL::Deployments::Alias` | engine, `NoUpdate`; created under a deployment, deleted under `/v2/aliases` |
+| 16 | `vercel_project_route` | `VERCEL::Projects::Route` | engine; `route` is a nested block and `position` is create-time only |
+| 17 | `vercel_project_members` | `VERCEL::Projects::Member` | engine (id = uid), `NoUpdate` |
+| 18 | `vercel_feature_flag_definition` | `VERCEL::FeatureFlags::Flag` | engine, `CreateMethod: PUT` |
+| 19 | `vercel_feature_flag_segment` | `VERCEL::FeatureFlags::Segment` | engine, `CreateMethod: PUT` |
+| 20 | `vercel_feature_flag_sdk_key` | `VERCEL::FeatureFlags::SDKKey` | engine, `CreateMethod: PUT`, id = hashKey |
+| 21 | `vercel_log_drain` | `VERCEL::Drains::LogDrain` | engine — legacy endpoint, absent from the current reference index; needs research |
+| 22 | `vercel_trace_drain` | `VERCEL::Drains::TraceDrain` | engine — endpoint unconfirmed |
+| 23 | `vercel_audit_log_drain` | `VERCEL::Drains::AuditLogDrain` | engine — endpoint unconfirmed |
+| 24 | `vercel_oauth_app` | `VERCEL::OAuth::App` | engine — endpoint not in the public reference index; needs research |
+| 25 | `vercel_oauth_app_client_secret` | `VERCEL::OAuth::ClientSecret` | engine — same |
+| 26 | `vercel_project_crons` | `VERCEL::Projects::Crons` | engine — endpoint not in the reference index; needs research |
+| 27 | `vercel_team_member` | `VERCEL::Teams::Member` | engine (`/v3/teams/{teamId}/members`); the team id comes from target config, not a property |
+| 28 | `vercel_deployment_protection_exception` | `VERCEL::Projects::ProtectionException` | engine — endpoint unconfirmed |
+| 29 | `vercel_integration_project_access` | `VERCEL::Integrations::ProjectAccess` | engine (`/v1/integrations/installations/…/connections`) |
+| 30 | `vercel_edge_config_token` | `VERCEL::GlobalConfig::Token` | **custom** — delete is a bulk `DELETE .../tokens` with a request body, not an item delete |
+| 31 | `vercel_edge_config_item` | `VERCEL::GlobalConfig::Items` | **custom** — one batch PATCH for the whole set; a bag resource like `SUPABASE::Functions::Secrets`. Writes are billed at $10/1K on Pro |
+| 32 | `vercel_edge_config_schema` | `VERCEL::GlobalConfig::Schema` | **custom** — singleton child with no id |
+| 33 | `vercel_project_environment_variables` | — | **custom** — the plural bulk form of #2; a bag over the same endpoint |
+| 34 | `vercel_shared_environment_variable` | `VERCEL::Environment::SharedVariable` | **custom** — `/v1/env` create and update take arrays |
+| 35 | `vercel_shared_environment_variable_project_link` | `VERCEL::Environment::SharedVariableLink` | **custom** — link/unlink verbs, not CRUD |
+| 36 | `vercel_bulk_redirects` | `VERCEL::Projects::BulkRedirects` | **custom** — project-level bag with staging and promotion versions, no per-item id |
+| 37 | `vercel_firewall_config` | `VERCEL::Security::FirewallConfig` | **custom** — singleton per project, `PUT`/`PATCH` only |
+| 38 | `vercel_firewall_bypass` | `VERCEL::Security::FirewallBypass` | **custom** — POST/DELETE by body, no id |
+| 39 | `vercel_attack_challenge_mode` | `VERCEL::Security::AttackChallengeMode` | **custom** — a toggle, not a resource |
+| 40 | `vercel_team_config` | `VERCEL::Teams::Config` | **custom** — singleton, update-only |
+| 41 | `vercel_project_deployment_retention` | `VERCEL::Projects::DeploymentRetention` | **custom** — a field of the project object, not its own endpoint |
+| 42 | `vercel_project_protection_bypass` | `VERCEL::Projects::ProtectionBypass` | **custom** — `PATCH .../protection-bypass` with generate/revoke semantics |
+| 43 | `vercel_project_rolling_release` | `VERCEL::Projects::RollingRelease` | **custom** — singleton child config |
+| 44 | `vercel_microfrontend_group` | `VERCEL::Microfrontends::Group` | **custom** — create and update use different path shapes (`/v1/microfrontends/group` vs `/v1/teams/{teamId}/microfrontends/{groupId}`) |
+| 45 | `vercel_microfrontend_group_membership` | `VERCEL::Microfrontends::Membership` | **custom** — `PATCH /v1/projects/{projectId}/microfrontends` |
+| 46 | `vercel_vcr_repository_permission` | `VERCEL::VCR::Permission` | **custom** — delete takes a body, no item path |
+| 47 | `vercel_feature_flag_config` | `VERCEL::FeatureFlags::Settings` | **custom** — singleton per project (`.../feature-flags/settings`) |
+| 48 | `vercel_access_group_member` | `VERCEL::AccessGroups::Member` | **custom** — membership is edited through the access group's own update body |
+| 49 | `vercel_blob_project_connection` | `VERCEL::Storage::BlobProjectConnection` | **custom** — connect/disconnect verbs |
+| 50 | `vercel_deployment` | `VERCEL::Deployments::Deployment` | **blocked** — asynchronous, needs deployment files uploaded via `POST /v2/files` and `readyState` polled. Requires async `Status()` and a file-upload path. Also the only resource here that always costs build minutes |
+| 51 | `vercel_blob_object` | `VERCEL::Storage::BlobObject` | **blocked** — not served by `api.vercel.com`; blob objects go to the Blob storage endpoint with a store token |
+
+51 rows: `vercel_blob_object` is listed separately because it is not part of the
+REST API this plugin talks to.
+
+### Remaining work, by kind
+
+- **21 engine-fit** (#9–#29): each needs its request body confirmed against its
+  own API reference page, then a `rest.Definition` and a PKL class. Seven of
+  them (#21–#26, #28) point at endpoints that are *not* in the public REST
+  reference index and need research before anything can be declared.
+- **19 custom** (#30–#49): each needs hand-written Go, because the API shape is
+  a bag, a singleton, a toggle, or a verb pair rather than CRUD on an id.
+- **2 blocked** (#50, #51): need async `Status()` polling and file upload.
+
+### Engine capabilities still missing
+
+Closing the list above also needs these, none of which exist yet:
+
+1. **Async create with `Status()` polling** — for `Network` (already shipped and
+   currently reporting success too early) and `Deployment`.
+2. **Singleton child resources** — no id; the native id is just the parent.
+3. **Bag resources** — one batch write for a whole keyed set.
+4. **Verb-pair resources** — link/unlink, connect/disconnect, generate/revoke.
+5. **Bulk delete taking a request body.**
+
+
 ## Resource catalog
 
 Naming: `VERCEL::Category::Resource`. Categories follow the REST API's own tag grouping.
