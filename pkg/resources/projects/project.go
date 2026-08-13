@@ -169,7 +169,7 @@ func (p *Project) Status(_ context.Context, req *resource.StatusRequest) (*resou
 func (p *Project) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
 	ids, err := prov.ProjectIDs(ctx, p.Client, "")
 	if err != nil {
-		return &resource.ListResult{NativeIDs: []string{}}, err
+		return &resource.ListResult{NativeIDs: []string{}}, nil
 	}
 	return &resource.ListResult{NativeIDs: ids}, nil
 }
