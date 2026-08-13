@@ -179,6 +179,25 @@ type Definition struct {
 	// {"decrypt": "true"}).
 	Query map[string]string
 
+	// ItemQuery adds query parameters to every request against the item path —
+	// Read, Update and Delete — templated with {id} and {parent}. Some
+	// endpoints need the parent to identify the resource even though it is not
+	// in the path: both GET and DELETE on a container registry repository
+	// require ?projectId=… and answer "400 missing required property
+	// projectId" without it.
+	ItemQuery map[string]string
+
+	// ParentInBody sends the parent property in the create body as well as
+	// using it in the native id. Normally the parent is a path segment and is
+	// excluded from the body; a few endpoints take it as a body field instead.
+	ParentInBody bool
+
+	// ParentFromField makes List a single flat pass, taking each item's parent
+	// from this response field rather than walking a parent collection. For
+	// resources listed account-wide but addressed per-parent — a VCR repository
+	// listing returns every repository with its projectId attached.
+	ParentFromField string
+
 	// Singleton declares a child resource with no id of its own, living at a
 	// fixed path under its parent — a project's rolling-release config at
 	// /v1/projects/{parent}/rolling-release/config, an Edge Config's schema.

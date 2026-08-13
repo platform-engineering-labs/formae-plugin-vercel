@@ -266,8 +266,7 @@ Ten resource types have fixtures. **Six fail, deliberately kept red** — a
 removed test hides a gap, a red one names it. `make conformance-test` therefore
 exits non-zero on this account; that is the intended signal, not a broken build.
 
-Last run 2026-08-13: **4 passed, 6 failed** (CRUD); the four passing types also
-pass discovery 4/4.
+Last run 2026-08-13: **5 passed, 5 failed** (CRUD).
 
 | Fixture | Status | Detail |
 |---|---|---|
@@ -275,16 +274,16 @@ pass discovery 4/4.
 | `envvar` | ✅ full | as above; no Replace (nothing createOnly changes) |
 | `globalconfig` | ✅ full | no Update (the API has none) |
 | `webhook` | ✅ full | no Update (the API has none) |
-| `vcrrepository` | ⚠️ Destroy fails | **Our gap.** Create/Verify/Extract/Sync pass. Destroy: `400 Invalid request: missing required property `projectId``. Needs an engine change — see below. |
+| `vcrrepository` | ✅ full | Fixed — see below. No Update (the API has none). |
 | `customenv` | ❌ plan | `400 Cannot create more than 0 custom environments` |
 | `drain` | ❌ plan | `403 Drains are not available for team <id>` |
 | `accessgroup` | ❌ token scope | `403 You don't have permission to create the access group` |
 | `authtoken` | ❌ token scope | `403 To create a token you must be authenticated to scope <account>` |
 | `featureflag` | ❌ undiagnosed | The same payload creates fine against an established project when driven straight at the API, but fails when the fixture provisions a fresh project in the same apply. Cause not identified. |
 
-Only two of the six are ours: `vcrrepository` (engine gap) and `featureflag`
-(unknown). The other four are account capability or token scope and should go
-green on a plan and token that allow them.
+Only one of the five is ours now: `featureflag` (undiagnosed). The other four
+are account capability or token scope and should go green on a plan and token
+that allow them.
 
 Nine types still have no fixture at all: `Projects::Domain`, `DNS::Record`,
 `Certs::Certificate`, `Certs::UploadedCertificate` (all need an apex domain the
@@ -312,14 +311,24 @@ Each applies to every resource, not just the fixture that exposed it:
   formae reports them missing even when present — `variants.id` was set and
   still rejected.
 
-### Engine capability still needed
+### VCR::Repository — fixed
 
-`VCR::Repository` delete needs the parent project id at delete time. The native
-id is the bare repository id, and `DeleteBody` can only interpolate `{id}` and
-`{parent}`, so there is no way to supply it. Either the native id becomes
-`{projectId}/{repoId}` — which then needs the parent included in the *create
-body*, currently excluded as a path segment — or `DeleteBody` learns to read
-from stored properties.
+Both `GET` and `DELETE` on `/v1/vcr/repository/{id}` require `?projectId=`, and
+answer `400 missing required property projectId` without it. The project was not
+recoverable from a native id of just the repository id, and the failing *Read*
+was what actually broke Destroy: formae reads before deleting, marked the
+resource Failed, and never issued the delete.
+
+Three engine capabilities closed it, each inert unless declared:
+
+| Field | Meaning |
+|---|---|
+| `ItemQuery map[string]string` | Query parameters on every item-path request — Read, Update and Delete — templated with `{id}` and `{parent}` |
+| `ParentInBody bool` | Send the parent property in the create body as well as using it in the native id, for endpoints that take it as a field rather than a path segment |
+| `ParentFromField string` | List in a single flat pass, taking each item's parent from a named response field, for resources enumerated account-wide but addressed per-parent |
+
+The PKL `ResourceHint` also gained `parent = "VERCEL::Projects::Project"` so
+formae destroys the repository before the project that owns it.
 
 ### Known engine limitation
 

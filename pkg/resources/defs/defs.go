@@ -292,14 +292,26 @@ func authToken() rest.Definition {
 // update endpoint, so every field is create-only.
 func vcrRepository() rest.Definition {
 	return rest.Definition{
-		Type:           "VERCEL::VCR::Repository",
-		Scope:          rest.ScopeAccount,
-		CollectionPath: "/v1/vcr/repository",
-		ItemPath:       "/v1/vcr/repository/{id}",
-		Unwrap:         "repository",
-		Fields:         []string{"name", "projectId"},
-		CreateOnly:     []string{"name", "projectId"},
-		NoUpdate:       true,
+		Type:  "VERCEL::VCR::Repository",
+		Scope: rest.ScopeParent,
+		// The project is part of the identity: both GET and DELETE require
+		// ?projectId= ("400 missing required property projectId" without it),
+		// so it has to be recoverable from the native id — hence the parent.
+		ParentProperty: "projectId",
+		// ...but the create body takes projectId as a field, not a path
+		// segment, so it must also be sent in the body.
+		ParentInBody: true,
+		// ...and repositories are listed account-wide, each carrying its own
+		// projectId, rather than under a per-project collection.
+		ParentFromField: "projectId",
+		CollectionPath:  "/v1/vcr/repository",
+		ItemPath:        "/v1/vcr/repository/{id}",
+		ItemQuery:       map[string]string{"projectId": "{parent}"},
+		Unwrap:          "repository",
+		ListField:       "repositories",
+		Fields:          []string{"name"},
+		CreateOnly:      []string{"name"},
+		NoUpdate:        true,
 	}
 }
 

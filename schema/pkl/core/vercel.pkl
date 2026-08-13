@@ -561,6 +561,10 @@ class AuthToken extends formae.Resource {
 @formae.ResourceHint {
     type = "VERCEL::VCR::Repository"
     identifier = "$.id"
+    // Declaring the parent so formae destroys the repository *before* the
+    // project. Without it the project goes first and the repository delete
+    // then fails against a project that no longer exists.
+    parent = "VERCEL::Projects::Project"
     discoverable = true
 }
 class VCRRepository extends formae.Resource {
