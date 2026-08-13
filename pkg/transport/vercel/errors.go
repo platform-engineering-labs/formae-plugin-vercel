@@ -46,12 +46,15 @@ func IsNotFound(err error) bool {
 	return apiErr.StatusCode == 404 || apiErr.Code == "not_found"
 }
 
-// isAlreadyExists reports whether a 403/409 is really a uniqueness conflict.
-// Vercel returns 403 both for "not authorized" and for "the environment variable
-// cannot be created because it already exists".
-func isAlreadyExists(e *APIError) bool {
-	msg := strings.ToLower(e.Message)
-	return strings.Contains(msg, "already exists") || e.Code == "conflict"
+// IsAlreadyExistsMessage reports whether an error code/message pair describes a
+// uniqueness conflict. Vercel returns 403 both for "not authorized" and for
+// "the environment variable cannot be created because it already exists", and
+// per-item failures inside a 201 body carry only a code and a message.
+func IsAlreadyExistsMessage(code, message string) bool {
+	if code == "conflict" || code == "ENV_ALREADY_EXISTS" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(message), "already exists")
 }
 
 // ClassifyStatus maps an HTTP status to a formae operation error code.
@@ -83,7 +86,7 @@ func ClassifyError(err error) resource.OperationErrorCode {
 	if !errors.As(err, &apiErr) {
 		return resource.OperationErrorCodeInternalFailure
 	}
-	if apiErr.StatusCode == 403 && isAlreadyExists(apiErr) {
+	if apiErr.StatusCode == 403 && IsAlreadyExistsMessage(apiErr.Code, apiErr.Message) {
 		return resource.OperationErrorCodeAlreadyExists
 	}
 	if IsNotFound(err) {
