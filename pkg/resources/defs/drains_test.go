@@ -42,7 +42,7 @@ func drainProvisioner(t *testing.T, h http.HandlerFunc) *rest.Resource {
 // A log drain as vercel_log_drain would express it: schemas={"log":…},
 // delivery.type=http, filter selecting sources and environments.
 func logDrainProperties() []byte {
-	return mustJSON(map[string]any{
+	return drainJSON(map[string]any{
 		"name":       "ship-logs",
 		"projects":   "some",
 		"projectIds": []any{"prj_1"},
@@ -66,7 +66,7 @@ func logDrainProperties() []byte {
 	})
 }
 
-func mustJSON(v any) []byte {
+func drainJSON(v any) []byte {
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
@@ -140,7 +140,7 @@ func TestDrainCreate_TraceDrainShape(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		_, _ = io.WriteString(w, `{"id":"drain_trace"}`)
 	})
-	props := mustJSON(map[string]any{
+	props := drainJSON(map[string]any{
 		"name":     "otel",
 		"projects": "all",
 		"schemas":  map[string]any{"trace": map[string]any{"version": "v1"}},
