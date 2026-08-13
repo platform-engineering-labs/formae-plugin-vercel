@@ -1,0 +1,34 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — in-place update of a custom environment.
+// `slug` is createOnly; `description` and `branchMatcher` are not.
+// See customenv.pkl for the plan limitation that blocks this today.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-customenv-project"
+  name = "\(v.prefix)-customenv-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new vercel.CustomEnvironment {
+    label = "plugin-sdk-test-customenv"
+    projectId = project.res.id
+    slug = "sdk-\(v.shortID)"                              // unchanged (createOnly)
+    description = "Plugin SDK conformance — updated"       // CHANGED
+    branchMatcher = new vercel.BranchMatcher {             // ADDED
+      type = "startsWith"
+      pattern = "sdk-test/"
+    }
+  }
+}

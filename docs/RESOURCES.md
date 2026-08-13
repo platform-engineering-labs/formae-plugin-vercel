@@ -262,41 +262,51 @@ id without guessing.
 
 ### Conformance coverage
 
-`make conformance-test` is green for four resource types, CRUD **and** discovery:
+Ten resource types have fixtures. **Six fail, deliberately kept red** — a
+removed test hides a gap, a red one names it. `make conformance-test` therefore
+exits non-zero on this account; that is the intended signal, not a broken build.
 
-| Fixture | Create | Verify | Extract | Sync | Update | Replace | Destroy | OOB delete | Discovery |
-|---|---|---|---|---|---|---|---|---|---|
-| `project` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `envvar` | ✓ | ✓ | ✓ | ✓ | ✓ | n/a | ✓ | ✓ | ✓ |
-| `globalconfig` | ✓ | ✓ | ✓ | ✓ | n/a | n/a | ✓ | ✓ | ✓ |
-| `webhook` | ✓ | ✓ | ✓ | ✓ | n/a | n/a | ✓ | ✓ | ✓ |
+Last run 2026-08-13: **4 passed, 6 failed** (CRUD); the four passing types also
+pass discovery 4/4.
 
-n/a = the API has no update, so the harness skips that phase.
-
-Fixtures were attempted for eight further types. Five are blocked by the
-account or the API, and were removed rather than left failing:
-
-| Type | Attempted | Outcome |
+| Fixture | Status | Detail |
 |---|---|---|
-| `Projects::CustomEnvironment` | yes | `400 Cannot create more than 0 custom environments` — plan-gated |
-| `Drains::Drain` | yes | `403 Drains are not available for team …` — plan-gated |
-| `AccessGroups::AccessGroup` | yes | `403 You don't have permission to create the access group` — token scope |
-| `Auth::Token` | yes | `403 To create a token you must be authenticated to scope "naxty"` — a team-scoped token cannot mint user tokens |
-| `VCR::Repository` | yes | Create/Verify/Extract/Sync **passed**; Destroy fails with `400 missing required property projectId`. Delete needs the project id, which is neither in the native id nor expressible through `DeleteBody`. Needs an engine change — see below. |
-| `FeatureFlags::Flag` | yes | Creates fine against an established project (verified directly against the API), but fails when the fixture provisions a fresh project in the same apply. Cause not yet identified. |
-| `Domain`, `DNS::Record`, `Certs::*` | no | Need an apex domain the account owns |
-| `Deployments::Alias` | no | Needs a real deployment — costs build minutes |
-| `Networking::Network` | no | Secure Compute — provisions billable infrastructure |
+| `project` | ✅ full | Create, Verify, Extract, Sync, Update, Replace, Destroy, OOB delete |
+| `envvar` | ✅ full | as above; no Replace (nothing createOnly changes) |
+| `globalconfig` | ✅ full | no Update (the API has none) |
+| `webhook` | ✅ full | no Update (the API has none) |
+| `vcrrepository` | ⚠️ Destroy fails | **Our gap.** Create/Verify/Extract/Sync pass. Destroy: `400 Invalid request: missing required property `projectId``. Needs an engine change — see below. |
+| `customenv` | ❌ plan | `400 Cannot create more than 0 custom environments` |
+| `drain` | ❌ plan | `403 Drains are not available for team <id>` |
+| `accessgroup` | ❌ token scope | `403 You don't have permission to create the access group` |
+| `authtoken` | ❌ token scope | `403 To create a token you must be authenticated to scope <account>` |
+| `featureflag` | ❌ undiagnosed | The same payload creates fine against an established project when driven straight at the API, but fails when the fixture provisions a fresh project in the same apply. Cause not identified. |
 
-Everything the attempts *did* find has been fixed, and those fixes apply to
-every resource, fixture or not:
+Only two of the six are ours: `vcrrepository` (engine gap) and `featureflag`
+(unknown). The other four are account capability or token scope and should go
+green on a plan and token that allow them.
 
-- `Project.nodeVersion` needed `hasProviderDefault`.
+Nine types still have no fixture at all: `Projects::Domain`, `DNS::Record`,
+`Certs::Certificate`, `Certs::UploadedCertificate` (all need an apex domain the
+account owns), `Deployments::Alias` (needs a real deployment — build minutes),
+`Networking::Network` (Secure Compute — billable), `AccessGroups::ProjectAssignment`
+(same token scope as `accessgroup`), and `FeatureFlags::Segment` / `::SDKKey`
+(blocked behind whatever blocks `featureflag`).
+
+### Defects these fixtures found, all fixed
+
+Each applies to every resource, not just the fixture that exposed it:
+
+- `Project.nodeVersion` needed `hasProviderDefault`. Vercel always returns a
+  value even when the forma sets none, so Verify/Extract/Sync/Update/Replace all
+  failed while Create and Destroy passed — which is exactly why unit tests
+  missed it.
 - The engine now strips nulls from request payloads. formae renders an unset
   optional sub-resource field as an explicit `null`, and Vercel rejects that for
   typed optionals (`delivery.compression should be string`,
-  `variants[0].label should be string`). This alone unblocked feature flags.
-- Drain HTTP delivery `headers` is non-optional with an empty default: the API
+  `variants[0].label should be string`). This alone unblocked feature flag
+  creation at the API level.
+- Drain HTTP delivery `headers` is non-optional with an empty default; the API
   rejects a delivery body that omits the key entirely.
 - `requiredOnCreate` removed from sub-resource fields nested inside collections.
   formae reports them missing even when present — `variants.id` was set and
@@ -305,10 +315,10 @@ every resource, fixture or not:
 ### Engine capability still needed
 
 `VCR::Repository` delete needs the parent project id at delete time. The native
-id is the bare repository id and `DeleteBody` can only interpolate `{id}` and
+id is the bare repository id, and `DeleteBody` can only interpolate `{id}` and
 `{parent}`, so there is no way to supply it. Either the native id becomes
-`{projectId}/{repoId}` (which then needs the parent included in the *create
-body*, currently excluded as a path segment), or `DeleteBody` learns to read
+`{projectId}/{repoId}` — which then needs the parent included in the *create
+body*, currently excluded as a path segment — or `DeleteBody` learns to read
 from stored properties.
 
 ### Known engine limitation
