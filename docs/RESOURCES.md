@@ -114,7 +114,11 @@ config = new vercel.Config {
 The goal is 1:1 coverage of `vercel/terraform-provider-vercel`. Status counted
 2026-08-13.
 
-**Implemented: 17 / 50 Terraform resources** (18 formae types — `VERCEL::Certs::Certificate` wraps the *issue* flow, which Terraform has no equivalent for).
+**Implemented: 20 / 50 Terraform resources**, as 19 formae types.
+
+The counts differ in both directions: `VERCEL::Certs::Certificate` wraps the cert
+*issue* flow, which Terraform has no equivalent for; and `VERCEL::Drains::Drain`
+covers three Terraform resources at once (see below).
 
 Legend — **done**: implemented and unit-tested · **engine**: fits
 `pkg/resources/rest`, needs its API request body confirmed and then declared ·
@@ -143,9 +147,9 @@ Legend — **done**: implemented and unit-tested · **engine**: fits
 | 18 | `vercel_feature_flag_definition` | `VERCEL::FeatureFlags::Flag` | engine, `CreateMethod: PUT` |
 | 19 | `vercel_feature_flag_segment` | `VERCEL::FeatureFlags::Segment` | engine, `CreateMethod: PUT` |
 | 20 | `vercel_feature_flag_sdk_key` | `VERCEL::FeatureFlags::SDKKey` | engine, `CreateMethod: PUT`, id = hashKey |
-| 21 | `vercel_log_drain` | `VERCEL::Drains::LogDrain` | engine — legacy endpoint, absent from the current reference index; needs research |
-| 22 | `vercel_trace_drain` | `VERCEL::Drains::TraceDrain` | engine — endpoint unconfirmed |
-| 23 | `vercel_audit_log_drain` | `VERCEL::Drains::AuditLogDrain` | engine — endpoint unconfirmed |
+| 21 | `vercel_log_drain` | `VERCEL::Drains::Drain` | **done** (engine) — `schemas {log}`, `delivery.type = http` |
+| 22 | `vercel_trace_drain` | `VERCEL::Drains::Drain` | **done** (engine) — `schemas {trace}`, `delivery.type = otlphttp` |
+| 23 | `vercel_audit_log_drain` | `VERCEL::Drains::Drain` | **done** (engine) — `schemas {audit_log}`, `delivery.type = http` or `s3` |
 | 24 | `vercel_oauth_app` | `VERCEL::OAuth::App` | engine — endpoint not in the public reference index; needs research |
 | 25 | `vercel_oauth_app_client_secret` | `VERCEL::OAuth::ClientSecret` | engine — same |
 | 26 | `vercel_project_crons` | `VERCEL::Projects::Crons` | engine — endpoint not in the reference index; needs research |
@@ -235,6 +239,26 @@ Terraform is therefore not reachable without reversing this decision.
 | The remaining bags, singletons and verb pairs (#30–#49) | All now expressible; none declared yet. |
 | `vercel_deployment` | Still blocked: needs file upload (`POST /v2/files`) on top of async polling. |
 | `vercel_blob_object` | Still blocked: not served by `api.vercel.com` at all. |
+
+### Why the three drain resources are one formae type
+
+Terraform ships `vercel_log_drain`, `vercel_trace_drain` and
+`vercel_audit_log_drain` as separate resources. They all POST to the same
+endpoint — `/v1/drains` — in the provider's own client
+(`client/{log_drain,trace_drain,audit_log_drain}.go` each build
+`fmt.Sprintf("%s/v1/drains", c.baseURL)`). What differs is the `schemas` map and
+the delivery type, not the resource.
+
+Modelling them as three formae types would create three types that create, read
+and — worse — **discover the same objects**, so every drain would appear three
+times. They are one type, `VERCEL::Drains::Drain`, and the PKL doc comment says
+which `schemas`/`delivery` combination reproduces which Terraform resource.
+
+The legacy `/v1/log-drains` family is deliberately not modelled: it is a
+different, deprecated thing (410 is among its documented statuses), it is not
+what `vercel_log_drain` wraps, and its create response is published as literally
+`{"type": "object"}` with no properties — so create could not extract a native
+id without guessing.
 
 ### Known engine limitation
 
