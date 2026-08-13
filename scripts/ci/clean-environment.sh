@@ -1,61 +1,76 @@
 #!/bin/bash
-# © 2025 Platform Engineering Labs Inc.
+# © 2026 Platform Engineering Labs Inc.
 # SPDX-License-Identifier: FSL-1.1-ALv2
 #
-# Clean Environment Hook
-# ======================
-# This script is called before AND after conformance tests to clean up
-# test resources in your cloud environment.
+# Clean Environment Hook for the Vercel plugin.
 #
-# Purpose:
-# - Before tests: Remove orphaned resources from previous failed runs
-# - After tests: Clean up resources created during the test run
+# Called before AND after conformance tests. Deletes every Vercel project whose
+# name starts with the test prefix; a project's environment variables go with
+# it, so they need no separate pass.
 #
-# The script should be idempotent - safe to run multiple times.
-# It should delete all resources matching the test resource prefix.
+# Required env:
+#   VERCEL_TOKEN (or VERCEL_API_TOKEN)  Vercel access token
 #
-# Test resources typically use a naming convention like:
-#   formae-plugin-sdk-test-{run-id}-*
+# Optional:
+#   VERCEL_TEAM_ID   Team to clean; omit to clean the token's personal account
+#   TEST_PREFIX      Project name prefix (default: "formae-sdk-test")
+#   VERCEL_API_BASE  Default: https://api.vercel.com
 #
-# Implementation varies by provider. Examples:
-#
-# AWS:
-#   - List and delete resources with test prefix using AWS CLI
-#   - Use resource tagging for easier identification
-#
-# OpenStack:
-#   - Use openstack CLI to list and delete test resources
-#   - Clean up in order: instances, volumes, networks, security groups, etc.
-#
-# Exit with non-zero status only for unexpected errors.
-# Missing resources (already cleaned) should not cause failures.
+# Idempotent: missing resources are not an error.
 
 set -euo pipefail
 
-# Prefix used for test resources - should match what conformance tests create
-TEST_PREFIX="${TEST_PREFIX:-formae-plugin-sdk-test-}"
+TEST_PREFIX="${TEST_PREFIX:-formae-sdk-test}"
+API_BASE="${VERCEL_API_BASE:-https://api.vercel.com}"
+TOKEN="${VERCEL_TOKEN:-${VERCEL_API_TOKEN:-}}"
 
-echo "clean-environment.sh: Cleaning resources with prefix '${TEST_PREFIX}'"
-echo ""
-echo "To implement cleanup for your provider, edit this script."
-echo "See comments in this file for examples."
-echo ""
+if [[ -z "${TOKEN}" ]]; then
+  echo "clean-environment.sh: VERCEL_TOKEN/VERCEL_API_TOKEN unset — skipping cleanup"
+  exit 0
+fi
 
-# Uncomment and modify for your provider:
-#
-# # AWS - clean up S3 buckets with test prefix
-# echo "Cleaning S3 buckets..."
-# aws s3api list-buckets --query "Buckets[?starts_with(Name, '${TEST_PREFIX}')].Name" --output text | \
-#     xargs -r -n1 aws s3 rb --force s3://
-#
-# # OpenStack - clean up instances
-# echo "Cleaning instances..."
-# openstack server list --name "^${TEST_PREFIX}" -f value -c ID | \
-#     xargs -r -n1 openstack server delete --wait
-#
-# # OpenStack - clean up volumes
-# echo "Cleaning volumes..."
-# openstack volume list --name "^${TEST_PREFIX}" -f value -c ID | \
-#     xargs -r -n1 openstack volume delete
+if ! command -v jq >/dev/null 2>&1; then
+  echo "clean-environment.sh: jq not found — skipping cleanup" >&2
+  exit 0
+fi
 
-echo "clean-environment.sh: Cleanup complete (no-op - not configured)"
+# Team scope is a query parameter on every endpoint.
+TEAM_QS=""
+if [[ -n "${VERCEL_TEAM_ID:-}" ]]; then
+  TEAM_QS="teamId=${VERCEL_TEAM_ID}"
+fi
+
+# api <method> <path-with-leading-slash> [extra curl args...]
+api() {
+  local method="$1" path="$2"
+  shift 2
+  local url="${API_BASE}${path}"
+  if [[ -n "${TEAM_QS}" ]]; then
+    if [[ "${url}" == *\?* ]]; then url="${url}&${TEAM_QS}"; else url="${url}?${TEAM_QS}"; fi
+  fi
+  curl --silent --show-error \
+    --request "${method}" \
+    --header "Authorization: Bearer ${TOKEN}" \
+    --header "Accept: application/json" \
+    "$@" "${url}"
+}
+
+echo "clean-environment.sh: cleaning Vercel projects with prefix '${TEST_PREFIX}'"
+
+# GET /v10/projects answers either a bare array or {projects: [...]}; `..|.id?`
+# would over-match nested objects, so select the right container explicitly.
+project_ids=$(api GET "/v10/projects?limit=100" \
+  | jq -r --arg p "${TEST_PREFIX}" '
+      (if type == "array" then . else .projects // [] end)
+      | .[]? | select(.name? // "" | startswith($p)) | .id' || true)
+
+if [[ -z "${project_ids}" ]]; then
+  echo "  no matching projects"
+else
+  for id in ${project_ids}; do
+    echo "  DELETE project ${id}"
+    api DELETE "/v9/projects/${id}" >/dev/null || true
+  done
+fi
+
+echo "clean-environment.sh: done"

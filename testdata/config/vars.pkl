@@ -1,0 +1,40 @@
+// © 2026 Platform Engineering Labs Inc.
+//
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Shared values for the conformance suite. Files in testdata/config/ are not
+// discovered as test cases.
+
+import "@formae/formae.pkl"
+import "@vercel/core/vercel.pkl"
+
+/// Test run id stamps unique names per run so repeat runs never collide.
+/// Vercel project names are lowercase-only, so normalise it.
+testRunID = read("env:FORMAE_TEST_RUN_ID").toLowerCase()
+
+/// Prefix every test resource shares. scripts/ci/clean-environment.sh deletes
+/// anything starting with it — keep the two in sync.
+prefix = "formae-sdk-test"
+
+stackName = "plugin-sdk-test-vercel-\(testRunID)"
+
+stack = new formae.Stack {
+    label = stackName
+    description = "Plugin SDK conformance test for VERCEL"
+}
+
+/// Team to run against. Unset targets the token's personal account, which is
+/// what a Hobby token gets.
+teamId = read?("env:VERCEL_TEAM_ID")
+
+/// Optional: scope environment-variable discovery to one project so the
+/// harness's discovery window does not have to walk a large account.
+projectId = read?("env:VERCEL_PROJECT_ID")
+
+target = new formae.Target {
+    label = "vercel-target"
+    config = new vercel.Config {
+        teamId = module.teamId
+        projectId = module.projectId
+    }
+}

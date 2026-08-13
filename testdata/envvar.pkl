@@ -1,0 +1,37 @@
+// © 2026 Platform Engineering Labs Inc.
+//
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — create VERCEL::Projects::EnvironmentVariable.
+//
+// Self-contained: it provisions its own project and wires the variable to it
+// through `project.res.id`, so no pre-existing project is needed.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-envvar-project"
+  name = "\(v.prefix)-envvar-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new vercel.EnvironmentVariable {
+    label = "plugin-sdk-test-envvar"
+    projectId = project.res.id
+    key = "FORMAE_SDK_TEST"
+    value = "initial-\(v.testRunID)"
+    // "plain" so Read gets the value back verbatim; "sensitive" variables are
+    // never returned by the API and would drift on every sync.
+    variableType = "plain"
+    targets = new Listing { "production"; "preview" }
+    comment = "Plugin SDK conformance test variable"
+  }
+}

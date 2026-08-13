@@ -1,96 +1,215 @@
 /*
- * Example Formae Plugin Schema
+ * © 2026 Platform Engineering Labs Inc.
  *
- * This file defines the resource types your plugin supports.
- * Each resource class extends formae.Resource and includes
- * a ResourceHint annotation with metadata.
- *
- * See the AWS plugin for comprehensive examples:
- * https://github.com/platform-engineering-labs/formae/tree/main/plugins/aws/schema/pkl
+ * SPDX-License-Identifier: FSL-1.1-ALv2
  */
+
+/// Vercel REST API resource definitions.
+///
+/// Only resources implemented by the plugin appear here. See docs/RESOURCES.md
+/// for the full catalog and the mapping to the official Terraform provider.
 module vercel
 
 import "@formae/formae.pkl"
 
 // =============================================================================
-// Tag - Plain class example
+// Target configuration
 // =============================================================================
-// Use a plain class (not SubResource) when:
-// - The structure is simple and universal (like key-value pairs)
-// - You manually define output with hidden/fixed pattern
-// - No FieldHints needed
-//
-// Use SubResource when:
-// - The nested object has multiple configurable fields
-// - Fields need FieldHint annotations (createOnly, entitySet, etc.)
-// - You want automatic output transformation via props()/render()
 
-/// Tag for resource identification and organization.
-open class Tag {
-    hidden key: String
-    hidden value: String
+/// Deployment-level config for a Vercel target.
+///
+/// Credentials live in the environment (`VERCEL_TOKEN`, or `VERCEL_API_TOKEN`),
+/// never in a forma.
+open class Config {
+    hidden fixed type: String = "vercel"
 
-    fixed Key: String = key
-    fixed Value: String = value
+    /// Override the API base URL. Defaults to https://api.vercel.com.
+    baseUrl: String? = null
+
+    /// Team to act on behalf of, as a team id (`team_…`). Sent as `?teamId=`.
+    /// Leave both `teamId` and `slug` unset to target the token's personal
+    /// account.
+    teamId: String? = null
+
+    /// Team to act on behalf of, as a team slug. Sent as `?slug=`.
+    /// Ignored when `teamId` is set.
+    slug: String? = null
+
+    /// Advanced / conformance-only. Scopes `List()` and discovery of
+    /// environment variables to a single project. Leave unset in normal use —
+    /// discovery then walks every project the token can see, which is slow on
+    /// large accounts. Project discovery is always global regardless.
+    projectId: String? = null
+
+    fixed Type: String = type
+    fixed BaseUrl: String? = baseUrl
+    fixed TeamId: String? = teamId
+    fixed Slug: String? = slug
+    fixed ProjectId: String? = projectId
 }
 
 // =============================================================================
-// Endpoint - SubResource example
+// VERCEL::Projects::Project
 // =============================================================================
-// SubResource provides props() and render() methods for automatic output
-// transformation, and integrates with the schema system for field hints.
 
-/// Network endpoint configuration.
-@formae.SubResourceHint {}
-class Endpoint extends formae.SubResource {
-    /// The endpoint URL
-    @formae.FieldHint {}
-    url: String
+/// Resolvable handle for `VERCEL::Projects::Project` outputs. Reference these
+/// from child resources to wire a freshly created project into its environment
+/// variables in the same apply, e.g. `projectId = project.res.id`.
+open class ProjectResolvable extends formae.Resolvable {
+    hidden type = "VERCEL::Projects::Project"
 
-    /// The port number
-    @formae.FieldHint {}
-    port: Int = 443
-
-    /// The protocol (http or https)
-    @formae.FieldHint {}
-    protocol: String = "https"
+    hidden id:   ProjectResolvable = (this) { property = "id" }
+    hidden name: ProjectResolvable = (this) { property = "name" }
 }
 
-// =============================================================================
-// ExampleResource - Main resource definition
-// =============================================================================
-
-/// ExampleResource demonstrates the structure of a Formae resource.
-/// TODO: Replace with your actual resource definitions.
+/// A Vercel project. Maps to `POST /v11/projects`.
+///
+/// Create/update/delete are synchronous — there is no provisioning wait.
+/// An empty project (no Git repository, no deployment) costs nothing.
 @formae.ResourceHint {
-    type = "VERCEL::Service::Resource"
-    identifier = "$.Id"
+    type = "VERCEL::Projects::Project"
+    identifier = "$.id"
+    discoverable = true
 }
-class ExampleResource extends formae.Resource {
-    fixed hidden type: String = "VERCEL::Service::Resource"
+class Project extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Projects::Project"
 
-    /// The display name of the resource
-    @formae.FieldHint {}
+    local parent = this
+    hidden res: ProjectResolvable = new {
+        label = parent.label
+        stack = parent.stack?.label
+    }
+
+    /// Project name. Lowercase alphanumerics and hyphens, max 100 characters.
+    ///
+    /// Immutable: `PATCH /v9/projects/{id}` does accept a new name, but a
+    /// rename rewrites every generated deployment URL. The official Terraform
+    /// provider marks it force-new for the same reason, and this plugin
+    /// follows it.
+    @formae.FieldHint {
+        createOnly = true
+        requiredOnCreate = true
+    }
     name: String
 
-    /// Optional description
+    /// Framework preset, e.g. "nextjs", "vite", "astro", "svelte", "remix".
+    /// Null lets Vercel auto-detect on the first deployment.
     @formae.FieldHint {}
-    description: String?
+    framework: String? = null
 
-    /// Region cannot be changed after creation (triggers replacement)
-    @formae.FieldHint { createOnly = true }
-    region: String?
-
-    /// Network endpoint configuration (SubResource example)
+    /// Build command. Null means auto-detect. Max 256 characters.
     @formae.FieldHint {}
-    endpoint: Endpoint?
+    buildCommand: String? = null
 
-    /// Resource tags for identification and organization.
-    /// Uses EntitySet semantics: items are matched by Key for updates.
-    /// See: https://docs.formae.io/plugin-sdk/collection-semantics
-    @formae.FieldHint {
-        updateMethod = "EntitySet"
-        indexField = "Key"
+    /// Development command. Null means auto-detect. Max 256 characters.
+    @formae.FieldHint {}
+    devCommand: String? = null
+
+    /// Install command. Null means auto-detect. Max 256 characters.
+    @formae.FieldHint {}
+    installCommand: String? = null
+
+    /// Build output directory. Null means auto-detect. Max 256 characters.
+    @formae.FieldHint {}
+    outputDirectory: String? = null
+
+    /// Directory within the repository that holds the project.
+    /// Null means the repository root. Max 256 characters.
+    @formae.FieldHint {}
+    rootDirectory: String? = null
+
+    /// Node.js runtime version, e.g. "22.x". Applied by update — the documented
+    /// create body does not accept it, so a freshly created project keeps the
+    /// account default until the first reconcile.
+    @formae.FieldHint {}
+    nodeVersion: String? = null
+}
+
+// =============================================================================
+// VERCEL::Projects::EnvironmentVariable
+// =============================================================================
+
+/// Target environment for an environment variable.
+typealias EnvironmentTarget = "production"|"preview"|"development"
+
+/// Storage type for an environment variable's value.
+///
+/// - `plain`: stored and returned as-is.
+/// - `encrypted`: encrypted at rest, still readable through the API.
+/// - `sensitive`: write-only — Vercel never returns the value, so a
+///   formae-managed `sensitive` variable reports drift on every sync.
+/// - `system`: reserved for Vercel-provided values.
+typealias EnvironmentVariableType = "plain"|"encrypted"|"sensitive"|"system"
+
+/// Resolvable handle for `VERCEL::Projects::EnvironmentVariable` outputs.
+open class EnvironmentVariableResolvable extends formae.Resolvable {
+    hidden type = "VERCEL::Projects::EnvironmentVariable"
+
+    hidden id:  EnvironmentVariableResolvable = (this) { property = "id" }
+    hidden key: EnvironmentVariableResolvable = (this) { property = "key" }
+}
+
+/// An environment variable on a Vercel project.
+/// Maps to `POST /v10/projects/{idOrName}/env`.
+///
+/// Native id is `{projectId}/{envId}`.
+@formae.ResourceHint {
+    type = "VERCEL::Projects::EnvironmentVariable"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class EnvironmentVariable extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Projects::EnvironmentVariable"
+
+    local parent = this
+    hidden res: EnvironmentVariableResolvable = new {
+        label = parent.label
+        stack = parent.stack?.label
     }
-    tags: Listing<Tag>?
+
+    /// Owning project id (`prj_…`) or project name. Immutable — the API has no
+    /// move operation.
+    @formae.FieldHint {
+        createOnly = true
+        requiredOnCreate = true
+    }
+    projectId: String|formae.Resolvable
+
+    /// Variable name. Letters, digits and `_` only, max 256 characters.
+    @formae.FieldHint { requiredOnCreate = true }
+    key: String
+
+    /// Variable value, max 65536 characters. Accepts a `formae.Value` so it can
+    /// be a formae-managed secret; formae resolves it to a plain string before
+    /// the plugin sees it.
+    @formae.FieldHint { requiredOnCreate = true }
+    value: (formae.Value|String)
+
+    /// Storage type. Named `variableType` rather than `type` because
+    /// `formae.Resource` already reserves `type`. Defaults to `encrypted`,
+    /// matching the Vercel dashboard.
+    @formae.FieldHint {}
+    variableType: EnvironmentVariableType = "encrypted"
+
+    /// Environments the variable applies to. Named `targets` rather than
+    /// `target` (the API's name) because `formae.Resource` already reserves
+    /// `target` for the deployment target. One of `targets` or
+    /// `customEnvironmentIds` is required.
+    @formae.FieldHint { updateMethod = "Set" }
+    targets: Listing<EnvironmentTarget>?
+
+    /// Custom environment ids the variable applies to. Alternative to
+    /// `targets`.
+    @formae.FieldHint { updateMethod = "Set" }
+    customEnvironmentIds: Listing<String>?
+
+    /// Git branch the variable is scoped to. Only valid together with
+    /// `targets` containing "preview". Max 250 characters.
+    @formae.FieldHint {}
+    gitBranch: String? = null
+
+    /// Free-text note explaining what the variable is for. Max 500 characters.
+    @formae.FieldHint {}
+    comment: String? = null
 }

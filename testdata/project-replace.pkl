@@ -1,0 +1,24 @@
+// © 2026 Platform Engineering Labs Inc.
+//
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — replacement of VERCEL::Projects::Project.
+// `name` is createOnly, so changing it must delete and recreate the project.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+
+import "./config/vars.pkl" as v
+
+forma {
+  v.stack
+  v.target
+
+  new vercel.Project {
+    label = "plugin-sdk-test-project"
+    name = "\(v.prefix)-project-\(v.testRunID)-r"   // CHANGED — triggers replace
+    framework = "nextjs"
+    buildCommand = "npm run build"
+    outputDirectory = ".next"
+  }
+}
