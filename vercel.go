@@ -64,11 +64,19 @@ func (p *Plugin) DiscoveryFilters() []model.MatchFilter { return nil }
 func (p *Plugin) LabelConfig() model.LabelConfig {
 	return model.LabelConfig{
 		DefaultQuery: "$.name",
+		// Overrides for every resource whose identity is not `name`.
 		ResourceOverrides: map[string]string{
-			"VERCEL::Projects::EnvironmentVariable": "$.key",
-			"VERCEL::Projects::CustomEnvironment":   "$.slug",
-			"VERCEL::GlobalConfig::Config":          "$.slug",
-			"VERCEL::Webhooks::Webhook":             "$.url",
+			"VERCEL::Projects::EnvironmentVariable":   "$.key",
+			"VERCEL::Projects::CustomEnvironment":     "$.slug",
+			"VERCEL::GlobalConfig::Config":            "$.slug",
+			"VERCEL::Webhooks::Webhook":               "$.url",
+			"VERCEL::Deployments::Alias":              "$.alias",
+			"VERCEL::AccessGroups::ProjectAssignment": "$.projectId",
+			"VERCEL::FeatureFlags::Flag":              "$.slug",
+			"VERCEL::FeatureFlags::Segment":           "$.slug",
+			"VERCEL::FeatureFlags::SDKKey":            "$.keyLabel",
+			"VERCEL::Certs::Certificate":              "$.cns[0]",
+			"VERCEL::Certs::UploadedCertificate":      "$.id",
 		},
 	}
 }
