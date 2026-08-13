@@ -134,15 +134,31 @@ func fillTemplate(v any, parent, id string) any {
 
 // body builds a request payload from the declared fields. The parent property
 // is excluded: it is a path segment, not a body field.
+//
+// When the definition declares a Wrap key the fields are nested under it,
+// except those listed in WrapExclude, which stay beside the wrapper. Only the
+// request is reshaped — responses are handled by Unwrap, independently.
 func (r *Resource) body(p props, forUpdate bool) map[string]any {
 	out := make(map[string]any, len(r.def.Fields))
+	wrapped := map[string]any{}
+
 	for _, field := range r.def.Fields {
 		if forUpdate && r.def.isCreateOnly(field) {
 			continue
 		}
-		if v, ok := p[field]; ok {
-			out[r.def.apiName(field)] = v
+		v, ok := p[field]
+		if !ok {
+			continue
 		}
+		if r.def.Wrap != "" && !r.def.isWrapExcluded(field) {
+			wrapped[r.def.apiName(field)] = v
+			continue
+		}
+		out[r.def.apiName(field)] = v
+	}
+
+	if len(wrapped) > 0 {
+		out[r.def.Wrap] = wrapped
 	}
 	return out
 }

@@ -503,6 +503,182 @@ func TestCreatePath_MissingPropertyIsRejected(t *testing.T) {
 	}
 }
 
+// -- request-body wrapper ---------------------------------------------------
+
+// A project route: the write body nests the managed fields under "route" while
+// the response and every list entry carry them flat, so reads and writes
+// disagree on shape. Wrap covers the request; Unwrap covers the response, and
+// they are independent.
+func projectRouteDef() Definition {
+	return Definition{
+		Type:           "VERCEL::Projects::Route",
+		Scope:          ScopeProject,
+		ParentProperty: "projectId",
+		CollectionPath: "/v1/projects/{parent}/routes",
+		ItemPath:       "/v1/projects/{parent}/routes/{id}",
+		ListField:      "routes",
+		Wrap:           "route",
+		WrapExclude:    []string{"position"},
+		Fields:         []string{"name", "description", "enabled", "srcSyntax", "routeRule", "position"},
+		Rename:         map[string]string{"routeRule": "route"},
+		CreateOnly:     []string{"position"},
+	}
+}
+
+func routeProperties() []byte {
+	props, _ := json.Marshal(map[string]any{
+		"projectId":   "prj_1",
+		"name":        "api",
+		"description": "d",
+		"enabled":     true,
+		"srcSyntax":   "regex",
+		"routeRule":   map[string]any{"src": "/a", "dest": "/b"},
+		"position":    map[string]any{"placement": "before", "referenceId": "rt_0"},
+	})
+	return props
+}
+
+func TestWrap_CreateNestsTheManagedFields(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		wrapped, ok := body["route"].(map[string]any)
+		if !ok {
+			t.Fatalf("body is not wrapped: %v", body)
+		}
+		if wrapped["name"] != "api" || wrapped["srcSyntax"] != "regex" {
+			t.Errorf("wrapper = %v", wrapped)
+		}
+		// A renamed field keeps its API name inside the wrapper.
+		if _, ok := wrapped["route"].(map[string]any); !ok {
+			t.Errorf("renamed field missing from the wrapper: %v", wrapped)
+		}
+		// The excluded field stays a sibling of the wrapper.
+		if _, ok := body["position"].(map[string]any); !ok {
+			t.Errorf("excluded field must stay top-level: %v", body)
+		}
+		if _, leaked := wrapped["position"]; leaked {
+			t.Errorf("excluded field was wrapped: %v", wrapped)
+		}
+		if _, leaked := body["name"]; leaked {
+			t.Errorf("wrapped field also sent flat: %v", body)
+		}
+
+		// The response is flat, next to fields we do not manage.
+		_, _ = io.WriteString(w, `{"id":"rt_1","name":"api","description":"d","enabled":true,
+			"srcSyntax":"regex","route":{"src":"/a","dest":"/b"},"staged":false,"rawSrc":"/a"}`)
+	})
+	p := New(projectRouteDef(), c, "")
+	res, err := p.Create(context.Background(), &resource.CreateRequest{Properties: routeProperties()})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	pr := res.ProgressResult
+	if pr.NativeID != "prj_1/rt_1" {
+		t.Fatalf("NativeID = %q", pr.NativeID)
+	}
+	// The flat response maps straight back onto the declared field names.
+	var got map[string]any
+	_ = json.Unmarshal(pr.ResourceProperties, &got)
+	if got["name"] != "api" {
+		t.Errorf("props = %v", got)
+	}
+	if rule, ok := got["routeRule"].(map[string]any); !ok || rule["src"] != "/a" {
+		t.Errorf("renamed field did not map back: %v", got)
+	}
+	if _, leaked := got["staged"]; leaked {
+		t.Errorf("unmanaged field leaked: %v", got)
+	}
+}
+
+func TestWrap_ReadIsUnaffected(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"id":"rt_1","name":"api","route":{"src":"/a"},"staged":false}`)
+	})
+	p := New(projectRouteDef(), c, "")
+	res, _ := p.Read(context.Background(), &resource.ReadRequest{NativeID: "prj_1/rt_1"})
+	var got map[string]any
+	_ = json.Unmarshal([]byte(res.Properties), &got)
+	if got["name"] != "api" || got["projectId"] != "prj_1" {
+		t.Errorf("props = %v", got)
+	}
+	if _, ok := got["routeRule"]; !ok {
+		t.Errorf("flat response should map onto the declared name: %v", got)
+	}
+}
+
+func TestWrap_UpdateWrapsAndStillOmitsCreateOnlyFields(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("method = %s", r.Method)
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		wrapped, ok := body["route"].(map[string]any)
+		if !ok {
+			t.Fatalf("body is not wrapped: %v", body)
+		}
+		if wrapped["name"] != "api" {
+			t.Errorf("wrapper = %v", wrapped)
+		}
+		if _, present := body["position"]; present {
+			t.Error("createOnly field must not be sent on update, wrapped or not")
+		}
+		_, _ = io.WriteString(w, `{"id":"rt_1","name":"api"}`)
+	})
+	p := New(projectRouteDef(), c, "")
+	res, _ := p.Update(context.Background(), &resource.UpdateRequest{NativeID: "prj_1/rt_1", DesiredProperties: routeProperties()})
+	if res.ProgressResult.OperationStatus != resource.OperationStatusSuccess {
+		t.Fatalf("status = %v: %s", res.ProgressResult.OperationStatus, res.ProgressResult.StatusMessage)
+	}
+}
+
+// Nothing left to nest means no wrapper: an empty object is a different request
+// from an absent one, and some APIs reject it.
+func TestWrap_EmptyWrapperIsOmitted(t *testing.T) {
+	def := projectRouteDef()
+	def.CreateOnly = []string{"name", "description", "enabled", "srcSyntax", "routeRule"}
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if _, present := body["route"]; present {
+			t.Errorf("empty wrapper should be omitted: %v", body)
+		}
+		if _, present := body["position"]; !present {
+			t.Errorf("body = %v", body)
+		}
+		_, _ = io.WriteString(w, `{"id":"rt_1"}`)
+	})
+	p := New(def, c, "")
+	if _, err := p.Update(context.Background(), &resource.UpdateRequest{NativeID: "prj_1/rt_1", DesiredProperties: routeProperties()}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+}
+
+// Wrap with nothing excluded nests every declared field.
+func TestWrap_WithoutExclusions(t *testing.T) {
+	def := drainDef()
+	def.Wrap = "drain"
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		wrapped, ok := body["drain"].(map[string]any)
+		if !ok || wrapped["name"] != "ship-logs" {
+			t.Errorf("body = %v", body)
+		}
+		if len(body) != 1 {
+			t.Errorf("nothing should sit beside the wrapper: %v", body)
+		}
+		_, _ = io.WriteString(w, `{"id":"drain_1","name":"ship-logs"}`)
+	})
+	p := New(def, c, "")
+	props, _ := json.Marshal(map[string]any{"name": "ship-logs", "url": "https://x", "deliveryFormat": "json"})
+	if _, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+}
+
 // -- verb pairs -------------------------------------------------------------
 
 // An association whose lifecycle is connect/disconnect rather than CRUD: the
