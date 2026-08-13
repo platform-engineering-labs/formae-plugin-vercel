@@ -192,6 +192,11 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		parent = v
 	}
 
+	if r.def.Bag != nil {
+		// The whole set is written by one batch call; there is no item to POST.
+		return r.bagCreate(ctx, parent, desired)
+	}
+
 	createPath, err := fillProps(path(r.def.createPath(), parent, ""), desired)
 	if err != nil {
 		return prov.FailCreate(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
@@ -232,6 +237,9 @@ func (r *Resource) Read(ctx context.Context, req *resource.ReadRequest) (*resour
 	parent, id, err := r.splitNativeID(req.NativeID)
 	if err != nil {
 		return &resource.ReadResult{ResourceType: req.ResourceType, ErrorCode: resource.OperationErrorCodeInvalidRequest}, nil
+	}
+	if r.def.Bag != nil {
+		return r.bagRead(ctx, req, parent)
 	}
 	raw, err := r.fetch(ctx, parent, id)
 	if err != nil {
@@ -305,6 +313,10 @@ func (r *Resource) Update(ctx context.Context, req *resource.UpdateRequest) (*re
 		return prov.FailUpdate(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
 	}
 
+	if r.def.Bag != nil {
+		return r.bagUpdate(ctx, req, parent, desired)
+	}
+
 	var updated props
 	err = r.client.Do(ctx,
 		r.request(r.def.updateMethod(), path(r.def.itemPathFor("update"), parent, id), r.body(desired, true)),
@@ -327,6 +339,9 @@ func (r *Resource) Delete(ctx context.Context, req *resource.DeleteRequest) (*re
 	parent, id, err := r.splitNativeID(req.NativeID)
 	if err != nil {
 		return prov.FailDelete(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
+	}
+	if r.def.Bag != nil {
+		return r.bagDelete(ctx, req, parent)
 	}
 	if err := r.client.Do(ctx, r.request("DELETE", path(r.def.itemPathFor("delete"), parent, id), nil), nil); err != nil {
 		if vercelapi.IsNotFound(err) {
