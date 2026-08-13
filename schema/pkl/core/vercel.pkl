@@ -423,9 +423,10 @@ class Webhook extends formae.Resource {
     @formae.FieldHint { createOnly = true; requiredOnCreate = true; updateMethod = "Set" }
     events: Listing<String>
 
-    /// Restrict the webhook to specific projects. Immutable.
+    /// Restrict the webhook to specific projects. Accepts resolvables so a
+    /// webhook can be wired to a project created in the same apply. Immutable.
     @formae.FieldHint { createOnly = true; updateMethod = "Set" }
-    projectIds: Listing<String>?
+    projectIds: Listing<String|formae.Resolvable>?
 }
 
 // =============================================================================

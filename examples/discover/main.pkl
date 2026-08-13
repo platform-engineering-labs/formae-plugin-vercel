@@ -1,0 +1,37 @@
+/*
+ * Discovery — the smallest possible forma.
+ *
+ * A bare target and nothing else. The agent will discover every Vercel
+ * resource the token can see and record it on the "unmanaged" stack, which you
+ * can then extract into real forma code:
+ *
+ *   formae apply --mode reconcile examples/discover/main.pkl
+ *   formae discover
+ *   formae extract --stack unmanaged
+ *
+ * Set VERCEL_TOKEN first. Add teamId to look at a team instead of your
+ * personal account.
+ */
+amends "@formae/forma.pkl"
+
+import "@formae/formae.pkl"
+import "@vercel/core/vercel.pkl"
+
+forma {
+  new formae.Stack {
+    label = "default"
+    description = "Discovery only — declares no resources"
+  }
+
+  new formae.Target {
+    label = "vercel"
+    config = new vercel.Config {
+      // teamId = "team_xxxxxxxx"
+      //
+      // On an account with many projects, set projectId to keep discovery of
+      // project sub-resources (environment variables, domains, custom
+      // environments) to a single project:
+      // projectId = "prj_xxxxxxxx"
+    }
+  }
+}
