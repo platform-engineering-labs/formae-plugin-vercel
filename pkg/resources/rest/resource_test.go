@@ -415,3 +415,123 @@ func TestRename_BothDirections(t *testing.T) {
 		t.Error("API name leaked into the property document")
 	}
 }
+
+// Some Vercel payloads arrive wrapped: creating a repository answers
+// {"repository": {...}}.
+func TestUnwrap_CreateAndRead(t *testing.T) {
+	def := Definition{
+		Type:           "VERCEL::VCR::Repository",
+		Scope:          ScopeAccount,
+		CollectionPath: "/v1/vcr/repository",
+		ItemPath:       "/v1/vcr/repository/{id}",
+		Unwrap:         "repository",
+		ListField:      "repositories",
+		Fields:         []string{"name", "projectId"},
+		CreateOnly:     []string{"name", "projectId"},
+		NoUpdate:       true,
+	}
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"repository":{"id":"repo_1","name":"api","projectId":"prj_1"}}`)
+	})
+	p := New(def, c, "")
+	props, _ := json.Marshal(map[string]any{"name": "api", "projectId": "prj_1"})
+	res, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if res.ProgressResult.NativeID != "repo_1" {
+		t.Fatalf("NativeID = %q", res.ProgressResult.NativeID)
+	}
+	read, _ := p.Read(context.Background(), &resource.ReadRequest{NativeID: "repo_1"})
+	var got map[string]any
+	_ = json.Unmarshal([]byte(read.Properties), &got)
+	if got["name"] != "api" {
+		t.Errorf("props = %v", got)
+	}
+}
+
+// Aliases are created under a deployment but read, listed and deleted
+// account-wide, so the deployment is a create-time path input rather than a
+// parent in the native id.
+func TestCreatePath_PropertyTemplate(t *testing.T) {
+	def := Definition{
+		Type:           "VERCEL::Deployments::Alias",
+		Scope:          ScopeAccount,
+		CreatePath:     "/v2/deployments/{prop:deploymentId}/aliases",
+		CollectionPath: "/v4/aliases",
+		ItemPath:       "/v4/aliases/{id}",
+		ItemPathDelete: "/v2/aliases/{id}",
+		ListField:      "aliases",
+		IDField:        "uid",
+		CreateIDField:  "uid",
+		Fields:         []string{"alias", "deploymentId"},
+		CreateOnly:     []string{"alias", "deploymentId"},
+		NoUpdate:       true,
+	}
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path != "/v2/deployments/dpl_1/aliases" {
+			t.Errorf("create path = %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"uid":"al_1","alias":"a.example.com"}`)
+	})
+	p := New(def, c, "")
+	props, _ := json.Marshal(map[string]any{"alias": "a.example.com", "deploymentId": "dpl_1"})
+	res, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Account-scoped: the native id is the alias id alone, not "dpl_1/al_1".
+	if res.ProgressResult.NativeID != "al_1" {
+		t.Errorf("NativeID = %q, want al_1", res.ProgressResult.NativeID)
+	}
+}
+
+func TestCreatePath_MissingPropertyIsRejected(t *testing.T) {
+	def := Definition{
+		Type:           "VERCEL::Deployments::Alias",
+		Scope:          ScopeAccount,
+		CreatePath:     "/v2/deployments/{prop:deploymentId}/aliases",
+		CollectionPath: "/v4/aliases",
+		ItemPath:       "/v4/aliases/{id}",
+		Fields:         []string{"alias"},
+	}
+	p := New(def, nil, "")
+	props, _ := json.Marshal(map[string]any{"alias": "a.example.com"})
+	res, _ := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if res.ProgressResult.ErrorCode != resource.OperationErrorCodeInvalidRequest {
+		t.Errorf("ErrorCode = %v, want InvalidRequest", res.ProgressResult.ErrorCode)
+	}
+}
+
+// Access groups key their id `accessGroupId`, including in the parent
+// collection used to enumerate children.
+func TestParentIDField(t *testing.T) {
+	def := Definition{
+		Type:            "VERCEL::AccessGroups::ProjectAssignment",
+		Scope:           ScopeParent,
+		ParentProperty:  "accessGroupId",
+		ParentListPath:  "/v1/access-groups",
+		ParentListField: "accessGroups",
+		ParentIDField:   "accessGroupId",
+		CollectionPath:  "/v1/access-groups/{parent}/projects",
+		ItemPath:        "/v1/access-groups/{parent}/projects/{id}",
+		ListField:       "projects",
+		IDField:         "projectId",
+		Fields:          []string{"role"},
+	}
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/access-groups":
+			_, _ = io.WriteString(w, `{"accessGroups":[{"accessGroupId":"ag_1"}]}`)
+		case "/v1/access-groups/ag_1/projects":
+			_, _ = io.WriteString(w, `{"projects":[{"projectId":"prj_1","role":"ADMIN"}]}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	})
+	p := New(def, c, "")
+	res, _ := p.List(context.Background(), &resource.ListRequest{})
+	if len(res.NativeIDs) != 1 || res.NativeIDs[0] != "ag_1/prj_1" {
+		t.Errorf("NativeIDs = %v", res.NativeIDs)
+	}
+}

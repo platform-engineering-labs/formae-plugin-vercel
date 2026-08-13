@@ -59,6 +59,29 @@ func (r *Resource) joinNativeID(parent, id string) string {
 	return parent + "/" + id
 }
 
+// fillProps replaces "{prop:<field>}" placeholders with values from the
+// desired properties. A missing or non-string value is a request error, not a
+// silently malformed URL.
+func fillProps(template string, p props) (string, error) {
+	out := template
+	for {
+		start := strings.Index(out, "{prop:")
+		if start < 0 {
+			return out, nil
+		}
+		end := strings.Index(out[start:], "}")
+		if end < 0 {
+			return "", fmt.Errorf("unterminated {prop: in path template %q", template)
+		}
+		field := out[start+len("{prop:") : start+end]
+		v, _ := p[field].(string)
+		if v == "" {
+			return "", fmt.Errorf("%s is required", field)
+		}
+		out = out[:start] + v + out[start+end+1:]
+	}
+}
+
 // path fills a template's {parent} and {id} placeholders.
 func path(template, parent, id string) string {
 	out := strings.ReplaceAll(template, "{parent}", parent)
@@ -99,6 +122,19 @@ func (r *Resource) toProperties(raw props, parent string) props {
 	return out
 }
 
+// unwrap descends into the response envelope key when the definition declares
+// one, e.g. {"repository": {...}} -> {...}.
+func (r *Resource) unwrap(raw props) props {
+	if r.def.Unwrap == "" {
+		return raw
+	}
+	inner, ok := raw[r.def.Unwrap].(map[string]any)
+	if !ok {
+		return raw
+	}
+	return props(inner)
+}
+
 func (r *Resource) idOf(raw props) string {
 	return stringField(raw, r.def.idField())
 }
@@ -136,13 +172,19 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		parent = v
 	}
 
+	createPath, err := fillProps(path(r.def.createPath(), parent, ""), desired)
+	if err != nil {
+		return prov.FailCreate(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
+	}
+
 	var created props
-	err := r.client.Do(ctx,
-		r.request(r.def.createMethod(), path(r.def.CollectionPath, parent, ""), r.body(desired, false)),
+	err = r.client.Do(ctx,
+		r.request(r.def.createMethod(), createPath, r.body(desired, false)),
 		&created)
 	if err != nil {
 		return prov.FailCreate(vercelapi.ClassifyError(err), err.Error()), nil
 	}
+	created = r.unwrap(created)
 	id := stringField(created, r.def.createIDField())
 	if id == "" {
 		return prov.FailCreate(resource.OperationErrorCodeServiceInternalError,
@@ -167,14 +209,14 @@ func (r *Resource) Read(ctx context.Context, req *resource.ReadRequest) (*resour
 	}
 	return &resource.ReadResult{
 		ResourceType: req.ResourceType,
-		Properties:   string(prov.MustMarshal(r.toProperties(got, parent))),
+		Properties:   string(prov.MustMarshal(r.toProperties(r.unwrap(got), parent))),
 	}, nil
 }
 
 // readViaCollection covers APIs with no usable single-item GET: list the
 // collection and pick the entry out by id.
 func (r *Resource) readViaCollection(ctx context.Context, req *resource.ReadRequest, parent, id string) (*resource.ReadResult, error) {
-	items, err := r.collection(ctx, parent)
+	items, err := r.readCollection(ctx, parent)
 	if err != nil {
 		return &resource.ReadResult{ResourceType: req.ResourceType, ErrorCode: vercelapi.ClassifyError(err)}, nil
 	}
@@ -210,7 +252,7 @@ func (r *Resource) Update(ctx context.Context, req *resource.UpdateRequest) (*re
 	if err != nil {
 		return prov.FailUpdate(vercelapi.ClassifyError(err), err.Error()), nil
 	}
-	return prov.SuccessUpdate(req.NativeID, r.toProperties(updated, parent)), nil
+	return prov.SuccessUpdate(req.NativeID, r.toProperties(r.unwrap(updated), parent)), nil
 }
 
 func (r *Resource) Delete(ctx context.Context, req *resource.DeleteRequest) (*resource.DeleteResult, error) {
@@ -261,6 +303,11 @@ func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource
 // parents returns the ids List should enumerate under. Account-scoped
 // resources get a single empty parent, meaning "one pass, no substitution".
 func (r *Resource) parents(ctx context.Context) ([]string, error) {
+	if _, flat := r.def.listPath(); flat {
+		// A flat list path enumerates everything in one pass; there is no
+		// parent to substitute.
+		return []string{""}, nil
+	}
 	switch r.def.Scope {
 	case ScopeProject:
 		return prov.ProjectIDs(ctx, r.client, r.projectScope)
@@ -283,7 +330,7 @@ func (r *Resource) parentCollection(ctx context.Context) ([]string, error) {
 	for _, item := range items {
 		// Parent collections are keyed by "id" regardless of how the child
 		// resource is keyed.
-		if v, ok := item["id"].(string); ok && v != "" {
+		if v, ok := item[r.def.parentIDField()].(string); ok && v != "" {
 			ids = append(ids, v)
 		}
 	}
@@ -291,6 +338,13 @@ func (r *Resource) parentCollection(ctx context.Context) ([]string, error) {
 }
 
 func (r *Resource) collection(ctx context.Context, parent string) ([]props, error) {
+	p, _ := r.def.listPath()
+	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.def.Query)
+}
+
+// readCollection is what Read scans; it always uses CollectionPath, since a
+// flat ListPath would not be scoped to this resource's parent.
+func (r *Resource) readCollection(ctx context.Context, parent string) ([]props, error) {
 	return fetchList(ctx, r.client, path(r.def.CollectionPath, parent, ""), r.def.ListField, r.def.Query)
 }
 

@@ -129,3 +129,27 @@ func contains(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// A renamed field must still be a declared field, and must not collide with a
+// name formae.Resource already reserves.
+func TestRenamesAreConsistent(t *testing.T) {
+	reserved := map[string]bool{"type": true, "target": true, "label": true, "group": true, "stack": true}
+	for _, def := range All() {
+		for pklName, apiName := range def.Rename {
+			if !contains(def.Fields, pklName) {
+				t.Errorf("%s: rename source %q is not in Fields", def.Type, pklName)
+			}
+			if reserved[pklName] {
+				t.Errorf("%s: %q is reserved by formae.Resource and cannot be a field name", def.Type, pklName)
+			}
+			if apiName == "" {
+				t.Errorf("%s: rename of %q has an empty target", def.Type, pklName)
+			}
+		}
+		for _, f := range def.Fields {
+			if reserved[f] && def.Rename[f] == "" {
+				t.Errorf("%s: field %q is reserved by formae.Resource; declare it under another name and Rename it", def.Type, f)
+			}
+		}
+	}
+}

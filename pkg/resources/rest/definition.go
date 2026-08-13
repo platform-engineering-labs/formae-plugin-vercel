@@ -16,6 +16,8 @@
 // solvent.
 package rest
 
+import "strings"
+
 // Scope says what a resource hangs off, which decides both the native-id shape
 // and how List enumerates.
 type Scope int
@@ -54,9 +56,20 @@ type Definition struct {
 	// ParentListField is the key holding the array in ParentListPath's
 	// response; empty means the response is a bare array.
 	ParentListField string
+	// ParentIDField is the key holding a parent's id in that collection.
+	// Defaults to "id"; access groups, for instance, key theirs
+	// `accessGroupId`.
+	ParentIDField string
 
 	// CollectionPath is POSTed to for Create and GETed for List.
 	CollectionPath string
+
+	// CreatePath overrides CollectionPath for Create, for resources created
+	// under one parent but addressed elsewhere afterwards: an alias is created
+	// under a deployment (POST /v2/deployments/{id}/aliases) but read, listed
+	// and deleted account-wide. It may contain "{prop:<field>}" placeholders,
+	// filled from the desired properties.
+	CreatePath string
 	// ItemPath is used for Read, Update and Delete. Empty means the API has
 	// no item endpoint: Read then filters the collection by id and Update and
 	// Delete are unsupported unless ItemPathUpdate/ItemPathDelete are set.
@@ -73,6 +86,17 @@ type Definition struct {
 	// ListField is the key holding the array in CollectionPath's response;
 	// empty means the response is a bare array.
 	ListField string
+
+	// ListPath overrides CollectionPath for List. Aliases are created under a
+	// deployment but enumerated account-wide from /v4/aliases; when ListPath
+	// has no {parent} placeholder, List makes a single flat pass instead of
+	// walking parents.
+	ListPath string
+
+	// Unwrap is a response envelope key to descend into before reading the
+	// object. Vercel wraps some payloads: creating a repository answers
+	// {"repository": {...}} and creating a token answers {"token": {...}}.
+	Unwrap string
 
 	// IDField is the response field holding the resource id. Defaults to "id".
 	IDField string
@@ -135,6 +159,29 @@ func (d Definition) createIDField() string {
 		return d.CreateIDField
 	}
 	return d.idField()
+}
+
+func (d Definition) createPath() string {
+	if d.CreatePath != "" {
+		return d.CreatePath
+	}
+	return d.CollectionPath
+}
+
+func (d Definition) parentIDField() string {
+	if d.ParentIDField != "" {
+		return d.ParentIDField
+	}
+	return "id"
+}
+
+// listPath returns the path List should GET, and whether it is a flat pass
+// (no parent walking).
+func (d Definition) listPath() (p string, flat bool) {
+	if d.ListPath != "" {
+		return d.ListPath, !strings.Contains(d.ListPath, "{parent}")
+	}
+	return d.CollectionPath, d.Scope == ScopeAccount
 }
 
 func (d Definition) itemPathFor(op string) string {

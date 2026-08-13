@@ -461,3 +461,162 @@ class Network extends formae.Resource {
     @formae.FieldHint { createOnly = true; updateMethod = "Set" }
     awsAvailabilityZoneIds: Listing<String>?
 }
+
+// =============================================================================
+// VERCEL::AccessGroups::AccessGroup
+// =============================================================================
+
+/// An access group. Maps to `POST /v1/access-groups`.
+///
+/// Members and project roles are separate resources: the create body accepts
+/// them, but the read response only returns counts, so managing them here would
+/// report drift on every sync.
+@formae.ResourceHint {
+    type = "VERCEL::AccessGroups::AccessGroup"
+    identifier = "$.id"
+    discoverable = true
+}
+class AccessGroup extends formae.Resource {
+    fixed hidden type: String = "VERCEL::AccessGroups::AccessGroup"
+
+    /// Group name. Letters, digits, spaces, `_` and `-`, max 50 characters.
+    @formae.FieldHint { requiredOnCreate = true }
+    name: String
+}
+
+/// A project's role inside an access group.
+/// Maps to `POST /v1/access-groups/{accessGroupIdOrName}/projects`.
+@formae.ResourceHint {
+    type = "VERCEL::AccessGroups::ProjectAssignment"
+    identifier = "$.id"
+    parent = "VERCEL::AccessGroups::AccessGroup"
+    discoverable = true
+}
+class AccessGroupProject extends formae.Resource {
+    fixed hidden type: String = "VERCEL::AccessGroups::ProjectAssignment"
+
+    /// Owning access group id. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    accessGroupId: String|formae.Resolvable
+
+    /// Project to grant the role to. Immutable — it identifies the assignment.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// Role granted to the project.
+    @formae.FieldHint { requiredOnCreate = true }
+    role: "ADMIN"|"PROJECT_VIEWER"|"PROJECT_DEVELOPER"
+}
+
+// =============================================================================
+// VERCEL::Auth::Token
+// =============================================================================
+
+/// An account authentication token. Maps to `POST /v3/user/tokens`.
+///
+/// The token's value is returned exactly once, at creation, and is deliberately
+/// not part of this resource's state — formae would report it as drift on the
+/// next read. Capture it from the apply output if you need it.
+///
+/// The API has no update endpoint, so any change replaces the token.
+@formae.ResourceHint {
+    type = "VERCEL::Auth::Token"
+    identifier = "$.id"
+    discoverable = true
+}
+class AuthToken extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Auth::Token"
+
+    /// Human-readable token name. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    name: String
+
+    /// Expiry, as a Unix timestamp in milliseconds. Immutable.
+    @formae.FieldHint { createOnly = true }
+    expiresAt: Int? = null
+
+    /// Restrict the token to a single project. Immutable.
+    @formae.FieldHint { createOnly = true }
+    projectId: (String|formae.Resolvable)? = null
+}
+
+// =============================================================================
+// VERCEL::VCR::Repository
+// =============================================================================
+
+/// A Vercel Container Registry repository.
+/// Maps to `POST /v1/vcr/repository`.
+///
+/// The documented create body takes only `projectId` and `name`, and there is
+/// no update endpoint, so any change replaces the repository.
+@formae.ResourceHint {
+    type = "VERCEL::VCR::Repository"
+    identifier = "$.id"
+    discoverable = true
+}
+class VCRRepository extends formae.Resource {
+    fixed hidden type: String = "VERCEL::VCR::Repository"
+
+    /// Repository name. Lowercase alphanumerics with `.`, `_` and `-`
+    /// separators, max 255 characters. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    name: String
+
+    /// Project the repository belongs to. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+}
+
+// =============================================================================
+// VERCEL::Certs::Certificate
+// =============================================================================
+
+/// A Vercel-issued TLS certificate. Maps to `POST /v8/certs`.
+///
+/// This is the *issue* flow, which asks Vercel to obtain a certificate for a
+/// set of common names. Uploading your own certificate is a different endpoint
+/// (`PUT /v8/certs`) and is not modelled yet.
+@formae.ResourceHint {
+    type = "VERCEL::Certs::Certificate"
+    identifier = "$.id"
+    discoverable = true
+}
+class Certificate extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Certs::Certificate"
+
+    /// Common names the certificate should cover. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true; updateMethod = "Set" }
+    cns: Listing<String>
+}
+
+// =============================================================================
+// VERCEL::Deployments::Alias
+// =============================================================================
+
+/// An alias pointing at a deployment.
+/// Maps to `POST /v2/deployments/{id}/aliases`.
+///
+/// The deployment is a create-time input only: aliases are read, listed and
+/// deleted account-wide, so it is not part of the native id. The API has no
+/// update endpoint, so any change replaces the alias.
+@formae.ResourceHint {
+    type = "VERCEL::Deployments::Alias"
+    identifier = "$.id"
+    discoverable = true
+}
+class Alias extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Deployments::Alias"
+
+    /// Deployment to point the alias at. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    deploymentId: String|formae.Resolvable
+
+    /// The alias hostname. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    alias: String
+
+    /// Redirect the alias to this hostname with a 307 instead of serving the
+    /// deployment. Immutable.
+    @formae.FieldHint { createOnly = true }
+    redirect: String? = null
+}
