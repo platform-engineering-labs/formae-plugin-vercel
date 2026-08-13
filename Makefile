@@ -97,19 +97,38 @@ clean-environment:
 	@./scripts/ci/clean-environment.sh
 
 ## conformance-test: Run all conformance tests (CRUD + discovery)
-## Usage: make conformance-test [TEST=s3-bucket] [TIMEOUT=30m]
+## Usage: make conformance-test [TEST=project] [TIMEOUT=15] [PARALLEL=4] [GOTEST_TIMEOUT=60m]
+## Parameters:
+##   TEST           - Filter test cases by name pattern (FORMAE_TEST_FILTER)
+##   TIMEOUT        - Per-operation timeout in MINUTES (FORMAE_TEST_TIMEOUT, harness default 5)
+##   PARALLEL       - Max parallel test cases (FORMAE_TEST_PARALLEL + go test -parallel)
+##   TESTDATA_DIR   - Alternate testdata directory (FORMAE_TEST_TESTDATA_DIR)
+##   GOTEST_TIMEOUT - Wall-clock limit for the whole go test run (default 60m)
+## TIMEOUT is a bare number of minutes, not a Go duration: TIMEOUT=15, not 15m.
+## It bounds each individual resource operation; GOTEST_TIMEOUT bounds the run.
 ## Calls clean-environment before and after tests.
 conformance-test: conformance-test-crud conformance-test-discovery
 
+# Env shared by both conformance targets. Empty values are left unset so the
+# harness applies its own defaults rather than parsing "".
+CONFORMANCE_ENV = FORMAE_TEST_FILTER="$(TEST)" \
+	$(if $(TIMEOUT),FORMAE_TEST_TIMEOUT=$(TIMEOUT),) \
+	$(if $(PARALLEL),FORMAE_TEST_PARALLEL=$(PARALLEL),) \
+	$(if $(TESTDATA_DIR),FORMAE_TEST_TESTDATA_DIR=$(TESTDATA_DIR),)
+
+CONFORMANCE_FLAGS = -tags=conformance -v \
+	-timeout $(or $(GOTEST_TIMEOUT),60m) \
+	$(if $(PARALLEL),-parallel $(PARALLEL),)
+
 ## conformance-test-crud: Run only CRUD lifecycle tests
-## Usage: make conformance-test-crud [TEST=s3-bucket] [TIMEOUT=30m]
+## Usage: make conformance-test-crud [TEST=project] [TIMEOUT=15] [PARALLEL=4]
 conformance-test-crud: install
 	@echo "Pre-test cleanup..."
 	@./scripts/ci/clean-environment.sh || true
 	@echo ""
 	@echo "Running CRUD conformance tests..."
-	@FORMAE_TEST_FILTER="$(TEST)" FORMAE_TEST_TYPE=crud \
-		$(GO) test -tags=conformance -v -timeout $(or $(TIMEOUT),30m) ./...; \
+	@$(CONFORMANCE_ENV) FORMAE_TEST_TYPE=crud \
+		$(GO) test $(CONFORMANCE_FLAGS) ./...; \
 	TEST_EXIT=$$?; \
 	echo ""; \
 	echo "Post-test cleanup..."; \
@@ -117,14 +136,14 @@ conformance-test-crud: install
 	exit $$TEST_EXIT
 
 ## conformance-test-discovery: Run only discovery tests
-## Usage: make conformance-test-discovery [TEST=s3-bucket] [TIMEOUT=30m]
+## Usage: make conformance-test-discovery [TEST=project] [TIMEOUT=15] [PARALLEL=4]
 conformance-test-discovery: install
 	@echo "Pre-test cleanup..."
 	@./scripts/ci/clean-environment.sh || true
 	@echo ""
 	@echo "Running discovery conformance tests..."
-	@FORMAE_TEST_FILTER="$(TEST)" FORMAE_TEST_TYPE=discovery \
-		$(GO) test -tags=conformance -v -timeout $(or $(TIMEOUT),30m) ./...; \
+	@$(CONFORMANCE_ENV) FORMAE_TEST_TYPE=discovery \
+		$(GO) test $(CONFORMANCE_FLAGS) ./...; \
 	TEST_EXIT=$$?; \
 	echo ""; \
 	echo "Post-test cleanup..."; \

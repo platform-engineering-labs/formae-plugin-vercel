@@ -140,9 +140,24 @@ value = formae.value(random.password(32, false)).opaque.setOnce
 ```bash
 make test-unit           # unit tests (no credentials required)
 make lint
+make verify-schema
 make install             # conformance runs against the INSTALLED binary
 make conformance-test
 ```
+
+Conformance parameters:
+
+| Parameter | Meaning |
+|-----------|---------|
+| `TEST` | Filter test cases by name, e.g. `TEST=project` |
+| `TIMEOUT` | Per-operation timeout in **minutes** (bare number, not a Go duration). Harness default is 5. |
+| `PARALLEL` | Max parallel test cases |
+| `TESTDATA_DIR` | Alternate testdata directory |
+| `GOTEST_TIMEOUT` | Wall-clock limit for the whole run, default `60m` |
+
+`TIMEOUT` bounds a single resource operation; `GOTEST_TIMEOUT` bounds the entire
+`go test` invocation. They are different things — passing a Go duration such as
+`15m` to `TIMEOUT` is not valid.
 
 Conformance tests create and destroy real Vercel projects. They need:
 
