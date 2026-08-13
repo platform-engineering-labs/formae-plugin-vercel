@@ -38,8 +38,18 @@ func New(def Definition, client *vercelapi.Client, projectScope string) *Resourc
 // nothing.
 type props map[string]any
 
-// splitNativeID returns (parent, id). Account-scoped resources have no parent.
+// splitNativeID returns (parent, id). Account-scoped resources have no parent;
+// singletons and bags have no id.
 func (r *Resource) splitNativeID(nativeID string) (parent, id string, err error) {
+	if err := r.def.requireParent(); err != nil {
+		return "", "", err
+	}
+	if !r.def.hasOwnID() {
+		if nativeID == "" {
+			return "", "", fmt.Errorf("native id must be the %s", r.def.ParentProperty)
+		}
+		return nativeID, "", nil
+	}
 	if r.def.Scope == ScopeAccount {
 		if nativeID == "" {
 			return "", "", fmt.Errorf("native id must not be empty")
@@ -54,6 +64,9 @@ func (r *Resource) splitNativeID(nativeID string) (parent, id string, err error)
 }
 
 func (r *Resource) joinNativeID(parent, id string) string {
+	if !r.def.hasOwnID() {
+		return parent
+	}
 	if r.def.Scope == ScopeAccount {
 		return id
 	}
@@ -114,8 +127,11 @@ func (r *Resource) toProperties(raw props, parent string) props {
 			out[field] = v
 		}
 	}
-	if id, ok := raw[r.def.idField()]; ok {
-		out["id"] = id
+	// A singleton or bag has no id of its own; reporting one would drift.
+	if r.def.hasOwnID() {
+		if id, ok := raw[r.def.idField()]; ok {
+			out["id"] = id
+		}
 	}
 	if r.def.Scope != ScopeAccount && parent != "" {
 		out[r.def.ParentProperty] = parent
@@ -163,6 +179,9 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		return prov.FailCreate(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
 	}
 
+	if err := r.def.requireParent(); err != nil {
+		return prov.FailCreate(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
+	}
 	parent := ""
 	if r.def.Scope != ScopeAccount {
 		v, _ := desired[r.def.ParentProperty].(string)
@@ -186,6 +205,15 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		return prov.FailCreate(vercelapi.ClassifyError(err), err.Error()), nil
 	}
 	created = r.unwrap(created)
+
+	// A singleton has no id to look for: the parent is the whole native id.
+	if !r.def.hasOwnID() {
+		if r.def.Async != nil {
+			return r.asyncCreateResult(parent, created, parent), nil
+		}
+		return prov.SuccessCreate(parent, r.toProperties(created, parent)), nil
+	}
+
 	id := stringField(created, r.def.createIDField())
 	if id == "" {
 		return prov.FailCreate(resource.OperationErrorCodeServiceInternalError,
@@ -223,6 +251,16 @@ var errNoSuchItem = errors.New("no such item in collection")
 // narrowed to the declared fields. Read narrows it; Status reads the async
 // lifecycle field out of it, which is deliberately never a declared field.
 func (r *Resource) fetch(ctx context.Context, parent, id string) (props, error) {
+	// A singleton lives at a fixed path under its parent; there is nothing to
+	// scan for and no id to match on.
+	if !r.def.hasOwnID() {
+		var got props
+		if err := r.client.Do(ctx, r.request("GET", path(r.def.singletonPath(), parent, ""), nil), &got); err != nil {
+			return nil, err
+		}
+		return r.unwrap(got), nil
+	}
+
 	// No usable single-item GET: list the collection and pick the entry out.
 	if r.def.ReadViaCollection || r.def.ItemPath == "" {
 		items, err := r.readCollection(ctx, parent)
@@ -315,6 +353,19 @@ func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource
 	}
 
 	nativeIDs := []string{}
+
+	// One singleton (or bag) per parent, always at the same path: enumerating
+	// the parents is enumerating the resources. Whether each parent actually
+	// has one is Read's job — it reports NotFound and the agent converges.
+	if !r.def.hasOwnID() {
+		for _, parent := range parents {
+			if parent != "" {
+				nativeIDs = append(nativeIDs, parent)
+			}
+		}
+		return &resource.ListResult{NativeIDs: nativeIDs}, nil
+	}
+
 	for _, parent := range parents {
 		items, err := r.collection(ctx, parent)
 		if err != nil {
