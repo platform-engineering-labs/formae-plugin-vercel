@@ -127,6 +127,12 @@ type Definition struct {
 	// {"decrypt": "true"}).
 	Query map[string]string
 
+	// Async declares that the API accepts a write before the resource is
+	// usable, so Create and Update report InProgress and the agent polls
+	// Status(). Nil — the default — means every write returns the final state
+	// and Status() answers Success immediately. See async.go.
+	Async *AsyncSpec
+
 	// Operations the resource supports. Create/Read/List are assumed; set
 	// NoUpdate or NoDelete when the API has no such verb.
 	NoUpdate bool
