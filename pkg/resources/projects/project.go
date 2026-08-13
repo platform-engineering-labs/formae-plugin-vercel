@@ -65,30 +65,6 @@ type ProjectProperties struct {
 	NodeVersion     *string `json:"nodeVersion,omitempty"`
 }
 
-// projectAPI is the subset of the Vercel project object we manage. Everything
-// else the API returns is dropped so unmanaged fields never surface as drift.
-type projectAPI struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	AccountID       string  `json:"accountId"`
-	Framework       *string `json:"framework"`
-	BuildCommand    *string `json:"buildCommand"`
-	DevCommand      *string `json:"devCommand"`
-	InstallCommand  *string `json:"installCommand"`
-	OutputDirectory *string `json:"outputDirectory"`
-	RootDirectory   *string `json:"rootDirectory"`
-	NodeVersion     *string `json:"nodeVersion"`
-}
-
-func (a projectAPI) toProps() ProjectProperties {
-	return ProjectProperties{
-		ID: a.ID, Name: a.Name, AccountID: a.AccountID,
-		Framework: a.Framework, BuildCommand: a.BuildCommand, DevCommand: a.DevCommand,
-		InstallCommand: a.InstallCommand, OutputDirectory: a.OutputDirectory,
-		RootDirectory: a.RootDirectory, NodeVersion: a.NodeVersion,
-	}
-}
-
 func (p *Project) Create(ctx context.Context, req *resource.CreateRequest) (*resource.CreateResult, error) {
 	var desired ProjectProperties
 	if err := json.Unmarshal(req.Properties, &desired); err != nil {
@@ -115,7 +91,7 @@ func (p *Project) Create(ctx context.Context, req *resource.CreateRequest) (*res
 		}
 	}
 
-	var created projectAPI
+	var created ProjectProperties
 	if err := p.Client.Do(ctx, vercelapi.Request{
 		Method: "POST",
 		Path:   "/v11/projects",
@@ -126,11 +102,11 @@ func (p *Project) Create(ctx context.Context, req *resource.CreateRequest) (*res
 	if created.ID == "" {
 		return prov.FailCreate(resource.OperationErrorCodeServiceInternalError, "create response missing id"), nil
 	}
-	return prov.SuccessCreate(created.ID, created.toProps()), nil
+	return prov.SuccessCreate(created.ID, created), nil
 }
 
 func (p *Project) Read(ctx context.Context, req *resource.ReadRequest) (*resource.ReadResult, error) {
-	var got projectAPI
+	var got ProjectProperties
 	if err := p.Client.Do(ctx, vercelapi.Request{
 		Method: "GET",
 		Path:   "/v9/projects/" + req.NativeID,
@@ -139,7 +115,7 @@ func (p *Project) Read(ctx context.Context, req *resource.ReadRequest) (*resourc
 	}
 	return &resource.ReadResult{
 		ResourceType: req.ResourceType,
-		Properties:   string(prov.MustMarshal(got.toProps())),
+		Properties:   string(prov.MustMarshal(got)),
 	}, nil
 }
 
@@ -166,7 +142,7 @@ func (p *Project) Update(ctx context.Context, req *resource.UpdateRequest) (*res
 		body["nodeVersion"] = *desired.NodeVersion
 	}
 
-	var updated projectAPI
+	var updated ProjectProperties
 	if err := p.Client.Do(ctx, vercelapi.Request{
 		Method: "PATCH",
 		Path:   "/v9/projects/" + req.NativeID,
@@ -174,7 +150,7 @@ func (p *Project) Update(ctx context.Context, req *resource.UpdateRequest) (*res
 	}, &updated); err != nil {
 		return prov.FailUpdate(vercelapi.ClassifyError(err), err.Error()), nil
 	}
-	return prov.SuccessUpdate(req.NativeID, updated.toProps()), nil
+	return prov.SuccessUpdate(req.NativeID, updated), nil
 }
 
 func (p *Project) Delete(ctx context.Context, req *resource.DeleteRequest) (*resource.DeleteResult, error) {
@@ -206,7 +182,7 @@ func (p *Project) List(ctx context.Context, _ *resource.ListRequest) (*resource.
 // projectListResponse covers both documented shapes of GET /v10/projects:
 // a bare array, or an object with a pagination cursor.
 type projectListResponse struct {
-	Projects   []projectAPI `json:"projects"`
+	Projects   []ProjectProperties `json:"projects"`
 	Pagination *struct {
 		Next json.Number `json:"next"`
 	} `json:"pagination"`
