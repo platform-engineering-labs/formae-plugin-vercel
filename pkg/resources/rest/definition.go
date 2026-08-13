@@ -114,6 +114,19 @@ type Definition struct {
 	// {"repository": {...}} and creating a token answers {"token": {...}}.
 	Unwrap string
 
+	// Wrap is the mirror of Unwrap for the request body: the declared fields
+	// are nested under this key on create and update. A project route must be
+	// written as {"route": {name, …}, "position": {…}} but answers — and lists
+	// — with those same fields flat, so the two directions genuinely disagree
+	// on shape and each needs its own knob. Empty means the body is flat.
+	Wrap string
+	// WrapExclude are fields that stay at the top level of the request body,
+	// beside the wrapper rather than inside it — a route's `position`, which is
+	// a placement instruction rather than part of the route. Ignored when Wrap
+	// is empty. A wrapper left with no fields at all is omitted: an empty
+	// object is a different request from an absent one.
+	WrapExclude []string
+
 	// IDField is the response field holding the resource id. Defaults to "id".
 	IDField string
 	// CreateIDField overrides IDField for the create response only. Vercel is
@@ -264,10 +277,11 @@ func (d Definition) apiName(field string) string {
 
 // isCreateOnly reports whether a field must not be sent on update.
 func (d Definition) isCreateOnly(field string) bool {
-	for _, f := range d.CreateOnly {
-		if f == field {
-			return true
-		}
-	}
-	return false
+	return containsString(d.CreateOnly, field)
+}
+
+// isWrapExcluded reports whether a field stays outside the request-body
+// wrapper.
+func (d Definition) isWrapExcluded(field string) bool {
+	return containsString(d.WrapExclude, field)
 }
