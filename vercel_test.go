@@ -8,8 +8,13 @@ package main
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/registry"
+	vercelapi "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/transport/vercel"
 	"github.com/platform-engineering-labs/formae/pkg/plugin/resource"
 )
 
@@ -84,5 +89,36 @@ func TestCreate_UnknownResourceTypeIsHardError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("unknown resource type should return a hard error")
+	}
+}
+
+// A resource type the token cannot read must not sink discovery of the others.
+//
+// Regression guard: making per-type List failures fatal meant one 403 on
+// access groups (a routinely-unscoped permission) aborted discovery for all
+// nineteen types, and the agent stored nothing at all. Credential problems are
+// caught at dispatch; a per-endpoint refusal is not a credential problem.
+func TestList_PerTypeAPIFailureIsNotFatal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"error":{"code":"forbidden","message":"You don't have permission to list the access group."}}`)
+	}))
+	defer srv.Close()
+
+	c, err := vercelapi.NewClient(vercelapi.Config{BaseURL: srv.URL, Token: "tok"})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	factory, ok := registry.GetFactory("VERCEL::AccessGroups::ProjectAssignment")
+	if !ok {
+		t.Fatal("resource type not registered")
+	}
+	res, err := factory(c, &registry.TargetConfig{}).List(context.Background(),
+		&resource.ListRequest{ResourceType: "VERCEL::AccessGroups::ProjectAssignment"})
+	if err != nil {
+		t.Fatalf("a 403 on one type must not be fatal, got %v", err)
+	}
+	if len(res.NativeIDs) != 0 {
+		t.Errorf("expected no ids, got %v", res.NativeIDs)
 	}
 }

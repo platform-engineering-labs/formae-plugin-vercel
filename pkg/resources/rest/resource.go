@@ -430,10 +430,12 @@ func (r *Resource) Status(ctx context.Context, req *resource.StatusRequest) (*re
 func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
 	parents, err := r.parents(ctx)
 	if err != nil {
-		// Cannot even enumerate what to look under — that is a failure, not an
-		// empty account. Swallowing it here would make a bad token look
-		// identical to a account with nothing in it.
-		return &resource.ListResult{NativeIDs: []string{}}, err
+		// A single resource type the token cannot read must not abort
+		// discovery of the other eighteen. Tokens are routinely scoped so that
+		// e.g. access groups are forbidden while projects are fine; returning
+		// an error here made one 403 sink the whole namespace. Credential
+		// problems are caught earlier, at dispatch, where they belong.
+		return &resource.ListResult{NativeIDs: []string{}}, nil
 	}
 
 	nativeIDs := []string{}
