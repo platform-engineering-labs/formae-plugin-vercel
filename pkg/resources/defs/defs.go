@@ -194,10 +194,11 @@ func webhook() rest.Definition {
 
 // network — Secure Compute network, POST /v1/connect/networks.
 //
-// Caveat: creation is asynchronous (`status` goes create_in_progress → ready)
-// and the engine reports success as soon as the API accepts the request. A
-// freshly created network may not be usable yet. Modelling that properly needs
-// a Status() poll, which is tracked in docs/RESOURCES.md.
+// Creation is asynchronous: the documented `status` enum is
+// create_in_progress | delete_in_progress | error | ready. The Async spec makes
+// Create return InProgress and Status() poll until the network is actually
+// usable — reporting success early would let dependent resources run against a
+// network that does not exist yet.
 func network() rest.Definition {
 	return rest.Definition{
 		Type:           "VERCEL::Networking::Network",
@@ -207,6 +208,12 @@ func network() rest.Definition {
 		ListField:      "networks",
 		Fields:         []string{"name", "cidr", "region", "awsAvailabilityZoneIds"},
 		CreateOnly:     []string{"cidr", "region", "awsAvailabilityZoneIds"},
+		Async: &rest.AsyncSpec{
+			StatusField: "status",
+			Pending:     []string{"create_in_progress", "delete_in_progress"},
+			Failed:      []string{"error"},
+			Ready:       []string{"ready"},
+		},
 	}
 }
 
