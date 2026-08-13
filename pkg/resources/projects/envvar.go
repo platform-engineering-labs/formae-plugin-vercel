@@ -73,8 +73,8 @@ type EnvVarProperties struct {
 	ProjectID            string   `json:"projectId,omitempty"`
 	Key                  string   `json:"key,omitempty"`
 	Value                string   `json:"value,omitempty"`
-	Type                 string   `json:"type,omitempty"`
-	Target               []string `json:"target,omitempty"`
+	Type                 string   `json:"variableType,omitempty"`
+	Target               []string `json:"targets,omitempty"`
 	GitBranch            string   `json:"gitBranch,omitempty"`
 	Comment              string   `json:"comment,omitempty"`
 	CustomEnvironmentIDs []string `json:"customEnvironmentIds,omitempty"`

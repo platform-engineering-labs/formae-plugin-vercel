@@ -1,13 +1,21 @@
 /*
- * Basic Example
+ * Basic Example — a Vercel project and one environment variable.
  *
- * This example shows how to define resources using your plugin.
- * Run with: formae apply --mode reconcile --watch examples/basic/main.pkl
+ * Export VERCEL_TOKEN (or VERCEL_API_TOKEN) first, then:
+ *   formae apply --mode reconcile --watch examples/basic/main.pkl
  */
 amends "@formae/forma.pkl"
 
 import "@formae/formae.pkl"
 import "@vercel/core/vercel.pkl"
+
+local site = new vercel.Project {
+  label = "my-site"
+  name = "my-site"
+  framework = "nextjs"
+  buildCommand = "npm run build"
+  outputDirectory = ".next"
+}
 
 forma {
   new formae.Stack {
@@ -16,31 +24,22 @@ forma {
   }
 
   new formae.Target {
-    label = "my-target"
-    namespace = "VERCEL"
-    // Add your provider-specific configuration here
-    // For typed config, create a Config class in your schema:
-    //   config = new vercel.Config { region = "us-east-1" }
-    config = new Mapping {
-      ["region"] = "us-east-1"
-    }
+    label = "vercel"
+    // Credentials come from VERCEL_TOKEN / VERCEL_API_TOKEN, never the forma.
+    // Set teamId (or slug) to act on behalf of a team instead of the token's
+    // personal account.
+    config = new vercel.Config {}
   }
 
-  new vercel.ExampleResource {
-    label = "my-resource"
-    name = "My Example Resource"
-    description = "This is an example resource"
-    region = "us-east-1"
+  site
 
-    endpoint = new vercel.Endpoint {
-      url = "https://api.vercel.com"
-      port = 8080
-      protocol = "https"
-    }
-
-    tags = new Listing {
-      new vercel.Tag { key = "Environment"; value = "development" }
-      new vercel.Tag { key = "Team"; value = "platform" }
-    }
+  new vercel.EnvironmentVariable {
+    label = "api-url"
+    projectId = site.res.id
+    key = "NEXT_PUBLIC_API_URL"
+    value = "https://api.example.com"
+    variableType = "plain"
+    targets = new Listing { "production"; "preview" }
+    comment = "Public API base URL"
   }
 }
