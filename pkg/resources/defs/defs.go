@@ -26,9 +26,32 @@ import (
 	"github.com/platform-engineering-labs/formae/pkg/plugin/resource"
 )
 
-// All returns every engine-driven definition. Exported so tests can assert on
-// the set without reaching into package state.
+// groups holds every declared batch of definitions. Each file in this package
+// contributes one group from its own init(), so definitions can be added
+// without any file editing another — which is what makes the set safe to grow
+// from several directions at once.
+var groups [][]rest.Definition
+
+// AddGroup registers a batch of definitions. Call it from a file-local init().
+func AddGroup(defs []rest.Definition) {
+	groups = append(groups, defs)
+	for _, def := range defs {
+		register(def)
+	}
+}
+
+// All returns every declared definition, across all groups. Exported so tests
+// can assert on the whole set without reaching into package state.
 func All() []rest.Definition {
+	var out []rest.Definition
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
+}
+
+// core is the first group: the resources declared in this file.
+func core() []rest.Definition {
 	return []rest.Definition{
 		customEnvironment(),
 		projectDomain(),
@@ -45,11 +68,7 @@ func All() []rest.Definition {
 	}
 }
 
-func init() {
-	for _, def := range All() {
-		register(def)
-	}
-}
+func init() { AddGroup(core()) }
 
 func register(def rest.Definition) {
 	ops := []resource.Operation{
