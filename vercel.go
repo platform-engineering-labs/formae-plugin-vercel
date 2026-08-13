@@ -204,9 +204,16 @@ func (p *Plugin) Status(ctx context.Context, req *resource.StatusRequest) (*reso
 func (p *Plugin) List(ctx context.Context, req *resource.ListRequest) (*resource.ListResult, error) {
 	pr, _, err := p.dispatch(req.ResourceType, req.TargetConfig)
 	if err != nil {
-		// Discovery asks about every type the agent knows; an unsupported type
-		// or a missing token means "nothing here", not a failed reconcile.
-		return &resource.ListResult{NativeIDs: []string{}}, nil
+		// Discovery asks every plugin about every type it knows, so a type this
+		// plugin does not handle is genuinely "nothing here" — stay quiet.
+		if errors.Is(err, ErrNotImplemented) {
+			return &resource.ListResult{NativeIDs: []string{}}, nil
+		}
+		// Anything else — above all a missing token — is a misconfiguration,
+		// not an empty account. Returning an empty list here makes the two
+		// indistinguishable: discovery silently finds nothing and there is no
+		// way to tell why. Surface it.
+		return &resource.ListResult{NativeIDs: []string{}}, err
 	}
 	return pr.List(ctx, req)
 }
