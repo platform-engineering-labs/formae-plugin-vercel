@@ -117,8 +117,8 @@ Naming: `VERCEL::Category::Resource`. Categories follow the REST API's own tag g
 
 | Resource Type | API Endpoints | CRUD | Priority |
 |---------------|---------------|------|----------|
-| `VERCEL::Projects::Project` | `POST /v11/projects`, `GET /v9/projects/{idOrName}`, `PATCH /v9/projects/{idOrName}`, `DELETE /v9/projects/{idOrName}`, `GET /v10/projects` | C R U D L | **P1** |
-| `VERCEL::Projects::EnvironmentVariable` | `POST /v10/projects/{idOrName}/env`, `GET /v10/projects/{idOrName}/env?decrypt=true`, `PATCH /v9/projects/{idOrName}/env/{id}`, `DELETE /v9/projects/{idOrName}/env/{id}` | C R U D L | **P1** |
+| `VERCEL::Projects::Project` | `POST /v11/projects`, `GET /v9/projects/{idOrName}`, `PATCH /v9/projects/{idOrName}`, `DELETE /v9/projects/{idOrName}`, `GET /v10/projects` | C R U D L | **P1 — implemented** |
+| `VERCEL::Projects::EnvironmentVariable` | `POST /v10/projects/{idOrName}/env`, `GET /v10/projects/{idOrName}/env?decrypt=true`, `PATCH /v9/projects/{idOrName}/env/{id}`, `DELETE /v9/projects/{idOrName}/env/{id}` | C R U D L | **P1 — implemented** |
 | `VERCEL::Projects::Domain` | `POST /v10/projects/{idOrName}/domains`, `GET/PATCH/DELETE /v9/projects/{idOrName}/domains/{domain}` | C R U D L | P2 |
 | `VERCEL::Projects::CustomEnvironment` | `POST/GET /v9/projects/{idOrName}/custom-environments`, `GET/PATCH/DELETE .../{environmentSlugOrId}` | C R U D L | P2 |
 | `VERCEL::Projects::Member` | `GET/POST /v1/projects/{idOrName}/members`, `DELETE .../{uid}` | C R D L | P3 |
@@ -218,8 +218,8 @@ passed back as `?from=`. The plugin handles both response shapes.
 | `projectId` | (path) | **yes** | Project id or name |
 | `key` | `key` | no | Letters, digits, `_` only; ≤256 chars |
 | `value` | `value` | no | ≤65536 chars |
-| `type` | `type` | no | `plain` \| `encrypted` \| `sensitive` \| `system` |
-| `target` | `target` | no | Array of `production` / `preview` / `development` |
+| `variableType` | `type` | no | `plain` \| `encrypted` \| `sensitive` \| `system`. Renamed because `formae.Resource` reserves `type`. |
+| `targets` | `target` | no | Array of `production` / `preview` / `development`. Renamed because `formae.Resource` reserves `target` for the deployment target. |
 | `gitBranch` | `gitBranch` | no | Only valid with `target=preview` |
 | `comment` | `comment` | no | ≤500 chars |
 | `customEnvironmentIds` | `customEnvironmentIds` | no | Alternative to `target` |
