@@ -40,7 +40,7 @@ typealias FlagComparator =
 @formae.SubResourceHint {}
 class FlagSegmentOperand extends formae.SubResource {
     /// Discriminator. Always `"segment"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     type: "segment" = "segment"
 }
 
@@ -49,15 +49,15 @@ class FlagSegmentOperand extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagEntityOperand extends formae.SubResource {
     /// Discriminator. Always `"entity"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     type: "entity" = "entity"
 
     /// The entity kind to read, e.g. `"user"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     kind: String
 
     /// The attribute of that entity to read, e.g. `"email"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     attribute: String
 }
 
@@ -65,7 +65,7 @@ class FlagEntityOperand extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagListItem extends formae.SubResource {
     /// The value to compare against.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     value: String|Number
 
     /// Optional display label for the entry.
@@ -82,11 +82,11 @@ class FlagListItem extends formae.SubResource {
 class FlagListOperand extends formae.SubResource {
     /// Discriminator: `"list"` for a stored list, `"list/inline"` for one
     /// written out in place.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     type: "list"|"list/inline"
 
     /// The entries of the list. At most 10000.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     items: Listing<FlagListItem>
 }
 
@@ -94,16 +94,16 @@ class FlagListOperand extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagRegexOperand extends formae.SubResource {
     /// Discriminator. Always `"regex"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     type: "regex" = "regex"
 
     /// The pattern source, without delimiters.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     pattern: String
 
     /// Regular expression flags, e.g. `"i"`. Required by the API even when
     /// empty.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     flags: String
 }
 
@@ -119,11 +119,11 @@ class FlagCompareOptions extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagCondition extends formae.SubResource {
     /// What is being compared.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     lhs: FlagSegmentOperand|FlagEntityOperand
 
     /// How it is compared.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     cmp: FlagComparator
 
     /// What it is compared against. Omitted for existence tests (`ex`/`!ex`).
@@ -139,11 +139,11 @@ class FlagCondition extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagVariantOutcome extends formae.SubResource {
     /// Discriminator. Always `"variant"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     type: "variant" = "variant"
 
     /// Id of the variant to serve.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     variantId: String
 }
 
@@ -152,19 +152,19 @@ class FlagVariantOutcome extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagSplitOutcome extends formae.SubResource {
     /// Discriminator. Always `"split"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     type: "split" = "split"
 
     /// The entity attribute the split is keyed on.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     base: FlagEntityOperand
 
     /// The distribution, keyed by variant id.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     weights: Mapping<String, Number>
 
     /// Variant served when the base attribute does not exist.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     defaultVariantId: String
 }
 
@@ -172,11 +172,11 @@ class FlagSplitOutcome extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagRolloutSlot extends formae.SubResource {
     /// Promille of traffic sent to `rollToVariantId`, 0–100000 (1000 = 1%).
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     promille: Int
 
     /// How long this promille is served, in milliseconds, before the next slot.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     durationMs: Int
 }
 
@@ -186,31 +186,31 @@ class FlagRolloutSlot extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagRolloutOutcome extends formae.SubResource {
     /// Discriminator. Always `"rollout"`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     type: "rollout" = "rollout"
 
     /// The entity attribute the rollout is keyed on.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     base: FlagEntityOperand
 
     /// Epoch milliseconds at which the rollout begins.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     startTimestamp: Int
 
     /// The variant to roll away from.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     rollFromVariantId: String
 
     /// The variant to roll towards.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     rollToVariantId: String
 
     /// Variant served when the base attribute does not exist.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     defaultVariantId: String
 
     /// The rollout steps, in order. At least one.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     slots: Listing<FlagRolloutSlot>
 }
 
@@ -222,15 +222,15 @@ typealias FlagOutcome = FlagVariantOutcome|FlagSplitOutcome|FlagRolloutOutcome
 @formae.SubResourceHint {}
 class FlagRule extends formae.SubResource {
     /// Stable id of the rule, unique within the environment.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     id: String
 
     /// Conditions that must all hold for the rule to match.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     conditions: Listing<FlagCondition>
 
     /// What to serve when the rule matches.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     outcome: FlagOutcome
 }
 
@@ -238,7 +238,7 @@ class FlagRule extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagEntityValue extends formae.SubResource {
     /// The exact value to match, e.g. an email address.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     value: String
 
     /// Optional free-text note explaining why the value is pinned.
@@ -261,11 +261,11 @@ typealias FlagState = "active"|"archived"
 @formae.SubResourceHint {}
 class FlagVariant extends formae.SubResource {
     /// Stable variant id, referenced by rules, outcomes and targeting.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     id: String
 
     /// The value served for this variant. Must match the flag's `kind`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     value: String|Number|Boolean|Listing<Any>|Mapping<String, Any>
 
     /// Human-readable label shown in the Vercel dashboard.
@@ -282,11 +282,11 @@ class FlagVariant extends formae.SubResource {
 @formae.SubResourceHint {}
 class FlagEnvironmentReuse extends formae.SubResource {
     /// Whether the link is in effect.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     active: Boolean
 
     /// The environment to take the configuration from.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     environment: String
 }
 
@@ -295,19 +295,19 @@ class FlagEnvironmentReuse extends formae.SubResource {
 class FlagEnvironment extends formae.SubResource {
     /// Whether the flag is evaluated at all in this environment. When false the
     /// flag serves `pausedOutcome`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     active: Boolean
 
     /// What to serve while the flag is paused in this environment.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     pausedOutcome: FlagVariantOutcome
 
     /// Targeting rules, evaluated in order. May be empty.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     rules: Listing<FlagRule>
 
     /// What to serve when no rule matches.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     fallthrough: FlagOutcome
 
     /// Optionally evaluate this environment with another environment's

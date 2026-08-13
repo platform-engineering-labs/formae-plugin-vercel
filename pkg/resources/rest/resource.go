@@ -151,16 +151,51 @@ func (r *Resource) body(p props, forUpdate bool) map[string]any {
 			continue
 		}
 		if r.def.Wrap != "" && !r.def.isWrapExcluded(field) {
-			wrapped[r.def.apiName(field)] = v
+			wrapped[r.def.apiName(field)] = stripNulls(v)
 			continue
 		}
-		out[r.def.apiName(field)] = v
+		out[r.def.apiName(field)] = stripNulls(v)
 	}
 
 	if len(wrapped) > 0 {
 		out[r.def.Wrap] = wrapped
 	}
 	return out
+}
+
+// stripNulls removes null-valued keys from nested objects and arrays.
+//
+// formae renders an unset optional sub-resource field as an explicit null, and
+// Vercel rejects that for typed optionals — "`delivery.compression` should be
+// string", "`variants[0].label` should be string" — because its schemas mean
+// "absent" by omission, not by null. Three separate 400s traced back to this.
+//
+// Consequence worth knowing: an engine-driven resource cannot clear a field by
+// sending null. No endpoint modelled here needs that, and the one place it does
+// matter — Project's declarative PATCH — is hand-written and unaffected.
+func stripNulls(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, inner := range t {
+			if inner == nil {
+				continue
+			}
+			out[k] = stripNulls(inner)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, inner := range t {
+			if inner == nil {
+				continue
+			}
+			out = append(out, stripNulls(inner))
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // toProperties narrows an API response to the declared fields, then puts back

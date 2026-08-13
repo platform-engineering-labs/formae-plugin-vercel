@@ -971,3 +971,55 @@ func TestParentIDField(t *testing.T) {
 		t.Errorf("NativeIDs = %v", res.NativeIDs)
 	}
 }
+
+// formae renders unset optional sub-resource fields as explicit nulls, and
+// Vercel rejects those for typed optionals ("`delivery.compression` should be
+// string"). The engine must omit them instead.
+func TestBody_StripsNullsFromNestedPayloads(t *testing.T) {
+	def := Definition{
+		Type:           "VERCEL::Drains::Drain",
+		Scope:          ScopeAccount,
+		CollectionPath: "/v1/drains",
+		ItemPath:       "/v1/drains/{id}",
+		Fields:         []string{"name", "delivery", "variants"},
+	}
+	var got map[string]any
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = io.WriteString(w, `{"id":"drain_1"}`)
+	})
+	p := New(def, c, "")
+	props, _ := json.Marshal(map[string]any{
+		"name": "d",
+		"delivery": map[string]any{
+			"endpoint": "https://x", "compression": nil, "secret": nil,
+		},
+		"variants": []any{
+			map[string]any{"id": "on", "label": nil},
+		},
+	})
+	if _, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	delivery, _ := got["delivery"].(map[string]any)
+	if _, present := delivery["compression"]; present {
+		t.Error("null compression must be omitted, not sent")
+	}
+	if _, present := delivery["secret"]; present {
+		t.Error("null secret must be omitted, not sent")
+	}
+	if delivery["endpoint"] != "https://x" {
+		t.Errorf("non-null values must survive: %v", delivery)
+	}
+	variants, _ := got["variants"].([]any)
+	if len(variants) != 1 {
+		t.Fatalf("variants = %v", variants)
+	}
+	v0, _ := variants[0].(map[string]any)
+	if _, present := v0["label"]; present {
+		t.Error("null label inside an array element must be omitted")
+	}
+	if v0["id"] != "on" {
+		t.Errorf("array element lost data: %v", v0)
+	}
+}

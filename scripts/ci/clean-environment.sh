@@ -97,4 +97,40 @@ for id in ${wh_ids}; do
   api DELETE "/v1/webhooks/${id}" >/dev/null || true
 done
 
+echo "  access groups..."
+ag_ids=$(api GET "/v1/access-groups" \
+  | jq -r --arg p "${TEST_PREFIX}" '
+      (if type == "array" then . else (.accessGroups // []) end)
+      | .[]? | select(.name? // "" | startswith($p)) | .accessGroupId' || true)
+for id in ${ag_ids}; do
+  echo "    DELETE access-group ${id}"
+  api DELETE "/v1/access-groups/${id}" >/dev/null || true
+done
+
+echo "  drains..."
+dr_ids=$(api GET "/v1/drains" \
+  | jq -r --arg p "${TEST_PREFIX}" '
+      (if type == "array" then . else (.drains // []) end)
+      | .[]? | select(.name? // "" | startswith($p)) | .id' || true)
+for id in ${dr_ids}; do
+  echo "    DELETE drain ${id}"
+  api DELETE "/v1/drains/${id}" >/dev/null || true
+done
+
+# Auth tokens are account-wide and NOT team-scoped, so they are queried
+# without the team parameter.
+echo "  auth tokens..."
+tok_ids=$(curl --silent --show-error \
+    --header "Authorization: Bearer ${TOKEN}" --header "Accept: application/json" \
+    "${API_BASE}/v6/user/tokens" \
+  | jq -r --arg p "${TEST_PREFIX}" '
+      (if type == "array" then . else (.tokens // []) end)
+      | .[]? | select(.name? // "" | startswith($p)) | .id' || true)
+for id in ${tok_ids}; do
+  echo "    DELETE token ${id}"
+  curl --silent --show-error --request DELETE \
+    --header "Authorization: Bearer ${TOKEN}" \
+    "${API_BASE}/v3/user/tokens/${id}" >/dev/null || true
+done
+
 echo "clean-environment.sh: done"

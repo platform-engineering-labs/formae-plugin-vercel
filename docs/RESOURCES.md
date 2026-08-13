@@ -273,21 +273,43 @@ id without guessing.
 
 n/a = the API has no update, so the harness skips that phase.
 
-The remaining fifteen types have unit tests but no conformance fixture, for
-concrete reasons rather than neglect:
+Fixtures were attempted for eight further types. Five are blocked by the
+account or the API, and were removed rather than left failing:
 
-| Type | Why no fixture |
-|---|---|
-| `Projects::CustomEnvironment` | Plan-gated. On a Hobby account the API answers `400 Cannot create more than 0 custom environments`. The plugin maps it correctly; the test simply cannot run. |
-| `Projects::Domain`, `DNS::Record` | Need an apex domain the test account owns. Custom domains also require a paid plan. |
-| `Certs::Certificate`, `Certs::UploadedCertificate` | Need domain ownership / real key material. |
-| `Deployments::Alias` | Needs a real deployment, which costs build minutes. |
-| `Networking::Network` | Secure Compute; provisions billable infrastructure. |
-| `AccessGroups::AccessGroup`, `::ProjectAssignment` | Require an access-group-scoped token; a default token gets `403 You don't have permission to list the access group`. |
-| `Auth::Token` | Would create real API tokens in the account. Deliberately excluded. |
-| `Drains::Drain` | Billed per GB delivered, and needs a reachable delivery endpoint. |
-| `FeatureFlags::*` | Not yet attempted; likely needs the feature enabled on the account. |
-| `VCR::Repository` | Not yet attempted. |
+| Type | Attempted | Outcome |
+|---|---|---|
+| `Projects::CustomEnvironment` | yes | `400 Cannot create more than 0 custom environments` — plan-gated |
+| `Drains::Drain` | yes | `403 Drains are not available for team …` — plan-gated |
+| `AccessGroups::AccessGroup` | yes | `403 You don't have permission to create the access group` — token scope |
+| `Auth::Token` | yes | `403 To create a token you must be authenticated to scope "naxty"` — a team-scoped token cannot mint user tokens |
+| `VCR::Repository` | yes | Create/Verify/Extract/Sync **passed**; Destroy fails with `400 missing required property projectId`. Delete needs the project id, which is neither in the native id nor expressible through `DeleteBody`. Needs an engine change — see below. |
+| `FeatureFlags::Flag` | yes | Creates fine against an established project (verified directly against the API), but fails when the fixture provisions a fresh project in the same apply. Cause not yet identified. |
+| `Domain`, `DNS::Record`, `Certs::*` | no | Need an apex domain the account owns |
+| `Deployments::Alias` | no | Needs a real deployment — costs build minutes |
+| `Networking::Network` | no | Secure Compute — provisions billable infrastructure |
+
+Everything the attempts *did* find has been fixed, and those fixes apply to
+every resource, fixture or not:
+
+- `Project.nodeVersion` needed `hasProviderDefault`.
+- The engine now strips nulls from request payloads. formae renders an unset
+  optional sub-resource field as an explicit `null`, and Vercel rejects that for
+  typed optionals (`delivery.compression should be string`,
+  `variants[0].label should be string`). This alone unblocked feature flags.
+- Drain HTTP delivery `headers` is non-optional with an empty default: the API
+  rejects a delivery body that omits the key entirely.
+- `requiredOnCreate` removed from sub-resource fields nested inside collections.
+  formae reports them missing even when present — `variants.id` was set and
+  still rejected.
+
+### Engine capability still needed
+
+`VCR::Repository` delete needs the parent project id at delete time. The native
+id is the bare repository id and `DeleteBody` can only interpolate `{id}` and
+`{parent}`, so there is no way to supply it. Either the native id becomes
+`{projectId}/{repoId}` (which then needs the parent included in the *create
+body*, currently excluded as a path segment), or `DeleteBody` learns to read
+from stored properties.
 
 ### Known engine limitation
 
