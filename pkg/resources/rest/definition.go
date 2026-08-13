@@ -127,6 +127,15 @@ type Definition struct {
 	// {"decrypt": "true"}).
 	Query map[string]string
 
+	// Singleton declares a child resource with no id of its own, living at a
+	// fixed path under its parent — a project's rolling-release config at
+	// /v1/projects/{parent}/rolling-release/config, an Edge Config's schema.
+	// The native id is the parent id alone, Create and Update are usually the
+	// same call (set CreateMethod to PATCH or PUT), and List enumerates parents
+	// rather than items. A singleton must be project- or parent-scoped: with no
+	// parent there is nothing left to key it by. See singleton.go.
+	Singleton bool
+
 	// Async declares that the API accepts a write before the resource is
 	// usable, so Create and Update report InProgress and the agent polls
 	// Status(). Nil — the default — means every write returns the final state
@@ -200,6 +209,9 @@ func (d Definition) itemPathFor(op string) string {
 		if d.ItemPathDelete != "" {
 			return d.ItemPathDelete
 		}
+	}
+	if !d.hasOwnID() {
+		return d.singletonPath()
 	}
 	return d.ItemPath
 }
