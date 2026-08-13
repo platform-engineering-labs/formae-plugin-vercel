@@ -1,0 +1,30 @@
+/*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/// Plugin configuration.
+/// Customize this with plugin-specific settings that users can set in formae.conf.pkl.
+///
+/// Users import this via: import "plugins:/Vercel.pkl" as Vercel
+///
+/// Then use it in their formae.conf.pkl:
+///   agent {
+///       resourcePlugins {
+///           new Vercel.PluginConfig {
+///               rateLimit { maxRequestsPerSecond = 5 }
+///           }
+///       }
+///   }
+open module vercel.Config
+
+extends "formae:/Config.pkl"
+
+class PluginConfig extends BaseResourcePluginConfig {
+    type = "vercel"  // Plugin name used by formae to identify this plugin.
+
+    // Add custom configuration fields here, e.g.:
+    // defaultRegion: String = "us-east-1"
+    // maxRetries: Int = 3
+}
