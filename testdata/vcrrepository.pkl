@@ -1,0 +1,37 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::VCR::Repository (container registry).
+// Provisions its own project. The API has no update endpoint.
+//
+// KNOWN TO FAIL at Destroy. Verified 2026-08-13: Create, Verify, Extract and
+// Sync all pass; Destroy returns
+//   400 bad_request: "Invalid request: missing required property `projectId`."
+// This one IS a plugin gap, not the environment: delete needs the parent
+// project id, but the native id is the bare repository id and DeleteBody can
+// only interpolate {id} and {parent}. Fixing it needs an engine change — see
+// "Engine capability still needed" in docs/RESOURCES.md.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-vcr-project"
+  name = "\(v.prefix)-vcr-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new vercel.VCRRepository {
+    label = "plugin-sdk-test-vcr"
+    // Single Docker repository name component: lowercase, with . _ - separators.
+    name = "\(v.prefix)-\(v.shortID)"
+    projectId = project.res.id
+  }
+}

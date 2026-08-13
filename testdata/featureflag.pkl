@@ -1,0 +1,53 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::FeatureFlags::Flag. Provisions its own project.
+// `slug` and `kind` are createOnly.
+//
+// KNOWN TO FAIL, cause NOT yet identified. Verified 2026-08-13: this exact
+// payload creates successfully against an established project when driven
+// straight at the API, but fails when the fixture provisions a fresh project
+// in the same apply. Possibly an ordering or project-readiness issue; not
+// diagnosed, so not claimed either way.
+//
+// An earlier failure here — formae rendering unset optional sub-resource
+// fields as explicit nulls, which Vercel rejects ("`variants[0].label` should
+// be string") — WAS a real defect and is fixed in the engine.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+import "@vercel/core/featureflags.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-flag-project"
+  name = "\(v.prefix)-flag-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new featureflags.FeatureFlag {
+    label = "plugin-sdk-test-flag"
+    projectId = project.res.id
+    slug = "\(v.prefix)-\(v.shortID)"
+    kind = "boolean"
+    variants = new Listing {
+      new featureflags.FlagVariant { id = "on";  value = true }
+      new featureflags.FlagVariant { id = "off"; value = false }
+    }
+    environments = new Mapping {
+      ["production"] = new featureflags.FlagEnvironment {
+        active = false
+        pausedOutcome = new featureflags.FlagVariantOutcome { variantId = "off" }
+        rules = new Listing {}
+        fallthrough = new featureflags.FlagVariantOutcome { variantId = "off" }
+      }
+    }
+    description = "Plugin SDK conformance test flag"
+  }
+}
