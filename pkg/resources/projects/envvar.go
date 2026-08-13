@@ -265,7 +265,7 @@ func (e *EnvVar) Status(_ context.Context, req *resource.StatusRequest) (*resour
 func (e *EnvVar) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
 	projectIDs, err := prov.ProjectIDs(ctx, e.Client, e.ProjectScope)
 	if err != nil {
-		return &resource.ListResult{NativeIDs: []string{}}, nil
+		return &resource.ListResult{NativeIDs: []string{}}, err
 	}
 
 	nativeIDs := []string{}

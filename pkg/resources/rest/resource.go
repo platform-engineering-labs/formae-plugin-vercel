@@ -430,7 +430,10 @@ func (r *Resource) Status(ctx context.Context, req *resource.StatusRequest) (*re
 func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
 	parents, err := r.parents(ctx)
 	if err != nil {
-		return &resource.ListResult{NativeIDs: []string{}}, nil
+		// Cannot even enumerate what to look under — that is a failure, not an
+		// empty account. Swallowing it here would make a bad token look
+		// identical to a account with nothing in it.
+		return &resource.ListResult{NativeIDs: []string{}}, err
 	}
 
 	nativeIDs := []string{}
