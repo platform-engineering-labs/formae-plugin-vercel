@@ -114,7 +114,7 @@ config = new vercel.Config {
 The goal is 1:1 coverage of `vercel/terraform-provider-vercel`. Status counted
 2026-08-13.
 
-**Implemented: 8 / 50.**
+**Implemented: 14 / 50.**
 
 Legend — **done**: implemented and unit-tested · **engine**: fits
 `pkg/resources/rest`, needs its API request body confirmed and then declared ·
@@ -131,13 +131,13 @@ Legend — **done**: implemented and unit-tested · **engine**: fits
 | 6 | `vercel_edge_config` | `VERCEL::GlobalConfig::Config` | **done** (engine) |
 | 7 | `vercel_webhook` | `VERCEL::Webhooks::Webhook` | **done** (engine) |
 | 8 | `vercel_network` | `VERCEL::Networking::Network` | **done** (engine) — create is async and not yet polled |
-| 9 | `vercel_access_group` | `VERCEL::AccessGroups::AccessGroup` | engine — update is `POST /v1/access-groups/{id}`, not PATCH |
-| 10 | `vercel_access_group_project` | `VERCEL::AccessGroups::ProjectAssignment` | engine (`ScopeParent`, id = projectId) |
-| 11 | `vercel_user_token` | `VERCEL::Auth::Token` | engine, `NoUpdate`; token value is returned once, at create |
-| 12 | `vercel_vcr_repository` | `VERCEL::VCR::Repository` | engine |
-| 13 | `vercel_custom_certificate` | `VERCEL::Certs::Certificate` | engine, `NoUpdate`; three PEM fields, all write-only |
+| 9 | `vercel_access_group` | `VERCEL::AccessGroups::AccessGroup` | **done** (engine) — update verb is POST, id is `accessGroupId` |
+| 10 | `vercel_access_group_project` | `VERCEL::AccessGroups::ProjectAssignment` | **done** (engine) — keyed by projectId |
+| 11 | `vercel_user_token` | `VERCEL::Auth::Token` | **done** (engine) — `bearerToken` deliberately not modelled; returned once only |
+| 12 | `vercel_vcr_repository` | `VERCEL::VCR::Repository` | **done** (engine) — response unwrapped from `{repository:…}` |
+| 13 | `vercel_custom_certificate` | `VERCEL::Certs::Certificate` | **partial** — the *issue* flow (`POST /v8/certs`, `cns`) is **done**; Terraform's resource wraps the separate `PUT /v8/certs` upload of three PEM blobs, whose body is not yet verified |
 | 14 | `vercel_blob_store` | `VERCEL::Storage::BlobStore` | engine; no documented list endpoint, so discovery may be impossible |
-| 15 | `vercel_alias` | `VERCEL::Deployments::Alias` | engine, `NoUpdate`; created under a deployment, deleted under `/v2/aliases` |
+| 15 | `vercel_alias` | `VERCEL::Deployments::Alias` | **done** (engine) — deployment is a create-time path input, not part of the native id |
 | 16 | `vercel_project_route` | `VERCEL::Projects::Route` | engine; `route` is a nested block and `position` is create-time only |
 | 17 | `vercel_project_members` | `VERCEL::Projects::Member` | engine (id = uid), `NoUpdate` |
 | 18 | `vercel_feature_flag_definition` | `VERCEL::FeatureFlags::Flag` | engine, `CreateMethod: PUT` |
@@ -180,7 +180,7 @@ REST API this plugin talks to.
 
 ### Remaining work, by kind
 
-- **21 engine-fit** (#9–#29): each needs its request body confirmed against its
+- **15 engine-fit** left (#14, #16–#29): each needs its request body confirmed against its
   own API reference page, then a `rest.Definition` and a PKL class. Seven of
   them (#21–#26, #28) point at endpoints that are *not* in the public REST
   reference index and need research before anything can be declared.
