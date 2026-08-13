@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -190,7 +191,13 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		return prov.FailCreate(resource.OperationErrorCodeServiceInternalError,
 			fmt.Sprintf("create response missing %q", r.def.createIDField())), nil
 	}
-	return prov.SuccessCreate(r.joinNativeID(parent, id), r.toProperties(created, parent)), nil
+	nativeID := r.joinNativeID(parent, id)
+	if r.def.Async != nil {
+		// The API accepted the request; that is not the same as the resource
+		// existing. Let Status() decide.
+		return r.asyncCreateResult(nativeID, created, parent), nil
+	}
+	return prov.SuccessCreate(nativeID, r.toProperties(created, parent)), nil
 }
 
 func (r *Resource) Read(ctx context.Context, req *resource.ReadRequest) (*resource.ReadResult, error) {
@@ -198,37 +205,52 @@ func (r *Resource) Read(ctx context.Context, req *resource.ReadRequest) (*resour
 	if err != nil {
 		return &resource.ReadResult{ResourceType: req.ResourceType, ErrorCode: resource.OperationErrorCodeInvalidRequest}, nil
 	}
+	raw, err := r.fetch(ctx, parent, id)
+	if err != nil {
+		return &resource.ReadResult{ResourceType: req.ResourceType, ErrorCode: classifyFetchError(err)}, nil
+	}
+	return &resource.ReadResult{
+		ResourceType: req.ResourceType,
+		Properties:   string(prov.MustMarshal(r.toProperties(raw, parent))),
+	}, nil
+}
 
+// errNoSuchItem is returned by fetch when a collection scan finds no entry with
+// the wanted id — the collection-scan equivalent of a 404.
+var errNoSuchItem = errors.New("no such item in collection")
+
+// fetch returns the raw API object for one resource: unwrapped, but not yet
+// narrowed to the declared fields. Read narrows it; Status reads the async
+// lifecycle field out of it, which is deliberately never a declared field.
+func (r *Resource) fetch(ctx context.Context, parent, id string) (props, error) {
+	// No usable single-item GET: list the collection and pick the entry out.
 	if r.def.ReadViaCollection || r.def.ItemPath == "" {
-		return r.readViaCollection(ctx, req, parent, id)
+		items, err := r.readCollection(ctx, parent)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if r.idOf(item) == id {
+				return item, nil
+			}
+		}
+		return nil, errNoSuchItem
 	}
 
 	var got props
 	if err := r.client.Do(ctx, r.request("GET", path(r.def.ItemPath, parent, id), nil), &got); err != nil {
-		return &resource.ReadResult{ResourceType: req.ResourceType, ErrorCode: vercelapi.ClassifyError(err)}, nil
+		return nil, err
 	}
-	return &resource.ReadResult{
-		ResourceType: req.ResourceType,
-		Properties:   string(prov.MustMarshal(r.toProperties(r.unwrap(got), parent))),
-	}, nil
+	return r.unwrap(got), nil
 }
 
-// readViaCollection covers APIs with no usable single-item GET: list the
-// collection and pick the entry out by id.
-func (r *Resource) readViaCollection(ctx context.Context, req *resource.ReadRequest, parent, id string) (*resource.ReadResult, error) {
-	items, err := r.readCollection(ctx, parent)
-	if err != nil {
-		return &resource.ReadResult{ResourceType: req.ResourceType, ErrorCode: vercelapi.ClassifyError(err)}, nil
+// classifyFetchError maps a fetch failure to a formae error code, including the
+// collection-scan miss that never reaches the transport layer.
+func classifyFetchError(err error) resource.OperationErrorCode {
+	if errors.Is(err, errNoSuchItem) {
+		return resource.OperationErrorCodeNotFound
 	}
-	for _, item := range items {
-		if r.idOf(item) == id {
-			return &resource.ReadResult{
-				ResourceType: req.ResourceType,
-				Properties:   string(prov.MustMarshal(r.toProperties(item, parent))),
-			}, nil
-		}
-	}
-	return &resource.ReadResult{ResourceType: req.ResourceType, ErrorCode: resource.OperationErrorCodeNotFound}, nil
+	return vercelapi.ClassifyError(err)
 }
 
 func (r *Resource) Update(ctx context.Context, req *resource.UpdateRequest) (*resource.UpdateResult, error) {
@@ -252,7 +274,11 @@ func (r *Resource) Update(ctx context.Context, req *resource.UpdateRequest) (*re
 	if err != nil {
 		return prov.FailUpdate(vercelapi.ClassifyError(err), err.Error()), nil
 	}
-	return prov.SuccessUpdate(req.NativeID, r.toProperties(r.unwrap(updated), parent)), nil
+	updated = r.unwrap(updated)
+	if r.def.Async != nil {
+		return r.asyncUpdateResult(req.NativeID, updated, parent), nil
+	}
+	return prov.SuccessUpdate(req.NativeID, r.toProperties(updated, parent)), nil
 }
 
 func (r *Resource) Delete(ctx context.Context, req *resource.DeleteRequest) (*resource.DeleteResult, error) {
@@ -273,9 +299,13 @@ func (r *Resource) Delete(ctx context.Context, req *resource.DeleteRequest) (*re
 	return prov.SuccessDelete(req.NativeID), nil
 }
 
-func (r *Resource) Status(_ context.Context, req *resource.StatusRequest) (*resource.StatusResult, error) {
-	// Every resource driven by this engine is synchronous.
-	return prov.SuccessStatus(req.NativeID), nil
+func (r *Resource) Status(ctx context.Context, req *resource.StatusRequest) (*resource.StatusResult, error) {
+	if r.def.Async == nil {
+		// Resources that do not declare an async lifecycle are synchronous:
+		// the write already returned the final state.
+		return prov.SuccessStatus(req.NativeID), nil
+	}
+	return r.asyncStatus(ctx, req), nil
 }
 
 func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
