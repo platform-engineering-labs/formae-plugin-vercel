@@ -136,6 +136,12 @@ type Definition struct {
 	// parent there is nothing left to key it by. See singleton.go.
 	Singleton bool
 
+	// Bag declares a resource that is a whole keyed set written in one batch
+	// call — Global Config items, where the API has no per-item endpoint at
+	// all. Like a singleton it has no id of its own, so the native id is the
+	// parent id. Nil means the resource is an ordinary item. See bag.go.
+	Bag *BagSpec
+
 	// Async declares that the API accepts a write before the resource is
 	// usable, so Create and Update report InProgress and the agent polls
 	// Status(). Nil — the default — means every write returns the final state

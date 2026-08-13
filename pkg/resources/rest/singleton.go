@@ -16,7 +16,7 @@ import (
 // hasOwnID reports whether the resource is keyed by an id of its own. Singletons
 // and bags are not: they are keyed by their parent.
 func (d Definition) hasOwnID() bool {
-	return !d.Singleton
+	return !d.Singleton && d.Bag == nil
 }
 
 // requireParent is the check a definition without an id of its own must pass:
