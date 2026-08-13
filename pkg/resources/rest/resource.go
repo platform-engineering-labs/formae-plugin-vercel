@@ -504,10 +504,16 @@ func (r *Resource) collection(ctx context.Context, parent string) ([]props, erro
 	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.def.Query)
 }
 
-// readCollection is what Read scans; it always uses CollectionPath, since a
-// flat ListPath would not be scoped to this resource's parent.
+// readCollection is what Read scans. A parent-scoped ListPath is the right
+// source when the API creates and lists at different paths — a Global Config
+// token is POSTed to .../token but listed at .../tokens. A flat ListPath is not
+// scoped to this resource's parent, so CollectionPath is scanned instead.
 func (r *Resource) readCollection(ctx context.Context, parent string) ([]props, error) {
-	return fetchList(ctx, r.client, path(r.def.CollectionPath, parent, ""), r.def.ListField, r.def.Query)
+	p, flat := r.def.listPath()
+	if flat {
+		p = r.def.CollectionPath
+	}
+	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.def.Query)
 }
 
 // fetchList GETs a collection and normalises the two shapes Vercel uses: a

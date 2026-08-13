@@ -14,6 +14,20 @@
 // {created, failed} create envelope) — stay hand-written in
 // pkg/resources/projects. The engine is for the regular ones, not a universal
 // solvent.
+//
+// Beyond plain CRUD, a Definition can also declare the shapes Vercel keeps
+// reaching for. Each is inert unless declared, so a definition pays only for
+// what it uses:
+//
+//   - Async (async.go): the write is accepted before the resource exists, so
+//     Create and Update report InProgress and Status() polls.
+//   - Singleton (singleton.go): no id of its own, a fixed path under a parent.
+//   - Bag (bag.go): a whole keyed set written in one batch call.
+//   - CreateIDFromProperty, DeleteMethod, DeleteBody: association resources
+//     whose lifecycle is a verb pair (link/unlink, connect/disconnect) and
+//     deletes that name what to remove in a request body.
+//   - Wrap / WrapExclude: the request body nests the managed fields under a
+//     key while the response returns them flat.
 package rest
 
 import "strings"

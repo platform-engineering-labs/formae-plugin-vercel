@@ -846,6 +846,27 @@ func TestBulkDelete_SendsTheBodyToTheCollection(t *testing.T) {
 	}
 }
 
+// A token is created at .../token but listed at .../tokens, so the scan Read
+// does must follow the parent-scoped ListPath, not the create collection.
+func TestReadViaCollection_PrefersAParentScopedListPath(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/global-config/ecfg_1/tokens" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"tokens":[{"id":"tok_1","label":"ci"}]}`)
+	})
+	p := New(configTokenDef(), c, "")
+	res, _ := p.Read(context.Background(), &resource.ReadRequest{NativeID: "ecfg_1/tok_1"})
+	if res.ErrorCode != "" {
+		t.Fatalf("ErrorCode = %v", res.ErrorCode)
+	}
+	var got map[string]any
+	_ = json.Unmarshal([]byte(res.Properties), &got)
+	if got["label"] != "ci" || got["edgeConfigId"] != "ecfg_1" {
+		t.Errorf("props = %v", got)
+	}
+}
+
 // A bulk delete of something already gone is still a converged delete.
 func TestBulkDelete_NotFoundIsIdempotent(t *testing.T) {
 	c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
