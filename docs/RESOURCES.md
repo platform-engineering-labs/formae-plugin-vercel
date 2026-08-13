@@ -260,6 +260,35 @@ what `vercel_log_drain` wraps, and its create response is published as literally
 `{"type": "object"}` with no properties — so create could not extract a native
 id without guessing.
 
+### Conformance coverage
+
+`make conformance-test` is green for four resource types, CRUD **and** discovery:
+
+| Fixture | Create | Verify | Extract | Sync | Update | Replace | Destroy | OOB delete | Discovery |
+|---|---|---|---|---|---|---|---|---|---|
+| `project` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `envvar` | ✓ | ✓ | ✓ | ✓ | ✓ | n/a | ✓ | ✓ | ✓ |
+| `globalconfig` | ✓ | ✓ | ✓ | ✓ | n/a | n/a | ✓ | ✓ | ✓ |
+| `webhook` | ✓ | ✓ | ✓ | ✓ | n/a | n/a | ✓ | ✓ | ✓ |
+
+n/a = the API has no update, so the harness skips that phase.
+
+The remaining fifteen types have unit tests but no conformance fixture, for
+concrete reasons rather than neglect:
+
+| Type | Why no fixture |
+|---|---|
+| `Projects::CustomEnvironment` | Plan-gated. On a Hobby account the API answers `400 Cannot create more than 0 custom environments`. The plugin maps it correctly; the test simply cannot run. |
+| `Projects::Domain`, `DNS::Record` | Need an apex domain the test account owns. Custom domains also require a paid plan. |
+| `Certs::Certificate`, `Certs::UploadedCertificate` | Need domain ownership / real key material. |
+| `Deployments::Alias` | Needs a real deployment, which costs build minutes. |
+| `Networking::Network` | Secure Compute; provisions billable infrastructure. |
+| `AccessGroups::AccessGroup`, `::ProjectAssignment` | Require an access-group-scoped token; a default token gets `403 You don't have permission to list the access group`. |
+| `Auth::Token` | Would create real API tokens in the account. Deliberately excluded. |
+| `Drains::Drain` | Billed per GB delivered, and needs a reachable delivery endpoint. |
+| `FeatureFlags::*` | Not yet attempted; likely needs the feature enabled on the account. |
+| `VCR::Repository` | Not yet attempted. |
+
 ### Known engine limitation
 
 `rest.fetchList` does not follow `pagination.next` cursors, so discovery of

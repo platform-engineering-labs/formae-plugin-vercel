@@ -73,4 +73,28 @@ else
   done
 fi
 
+# --- Account-level resources -------------------------------------------------
+# Projects take their children with them, but Global Configs and webhooks are
+# account-scoped and would otherwise leak between runs.
+
+echo "  global configs..."
+gc_ids=$(api GET "/v1/global-config" \
+  | jq -r --arg p "${TEST_PREFIX}" '
+      (if type == "array" then . else (.configs // .globalConfigs // []) end)
+      | .[]? | select(.slug? // "" | startswith($p)) | .id' || true)
+for id in ${gc_ids}; do
+  echo "    DELETE global-config ${id}"
+  api DELETE "/v1/global-config/${id}" >/dev/null || true
+done
+
+echo "  webhooks..."
+wh_ids=$(api GET "/v1/webhooks" \
+  | jq -r '
+      (if type == "array" then . else (.webhooks // []) end)
+      | .[]? | select(.url? // "" | contains("formae-sdk-test")) | .id' || true)
+for id in ${wh_ids}; do
+  echo "    DELETE webhook ${id}"
+  api DELETE "/v1/webhooks/${id}" >/dev/null || true
+done
+
 echo "clean-environment.sh: done"

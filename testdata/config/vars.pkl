@@ -12,6 +12,11 @@ import "@vercel/core/vercel.pkl"
 /// Vercel project names are lowercase-only, so normalise it.
 testRunID = read("env:FORMAE_TEST_RUN_ID").toLowerCase()
 
+/// Short form of the run id, for fields with tight length limits — a custom
+/// environment slug is capped at 32 characters and the full run id does not
+/// fit alongside a prefix.
+shortID = testRunID.take(8)
+
 /// Prefix every test resource shares. scripts/ci/clean-environment.sh deletes
 /// anything starting with it — keep the two in sync.
 prefix = "formae-sdk-test"
