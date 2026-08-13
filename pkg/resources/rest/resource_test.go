@@ -1023,3 +1023,112 @@ func TestBody_StripsNullsFromNestedPayloads(t *testing.T) {
 		t.Errorf("array element lost data: %v", v0)
 	}
 }
+
+// A VCR repository is created with its project in the body, addressed by a
+// bare id, deleted with ?projectId=, and listed account-wide with each item
+// naming its own project. All four at once.
+func vcrDef() Definition {
+	return Definition{
+		Type:            "VERCEL::VCR::Repository",
+		Scope:           ScopeParent,
+		ParentProperty:  "projectId",
+		ParentInBody:    true,
+		ParentFromField: "projectId",
+		CollectionPath:  "/v1/vcr/repository",
+		ItemPath:        "/v1/vcr/repository/{id}",
+		ItemQuery:       map[string]string{"projectId": "{parent}"},
+		Unwrap:          "repository",
+		ListField:       "repositories",
+		Fields:          []string{"name"},
+		CreateOnly:      []string{"name"},
+		NoUpdate:        true,
+	}
+}
+
+func TestParentInBody_SendsParentAsField(t *testing.T) {
+	var body map[string]any
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = io.WriteString(w, `{"repository":{"id":"repo_1","name":"api","projectId":"prj_1"}}`)
+	})
+	p := New(vcrDef(), c, "")
+	props, _ := json.Marshal(map[string]any{"projectId": "prj_1", "name": "api"})
+	res, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if body["projectId"] != "prj_1" {
+		t.Errorf("parent must be sent in the create body, got %v", body)
+	}
+	if res.ProgressResult.NativeID != "prj_1/repo_1" {
+		t.Errorf("NativeID = %q, want prj_1/repo_1", res.ProgressResult.NativeID)
+	}
+}
+
+// Regression: delete used to omit the project entirely and the API answered
+// "400 missing required property projectId".
+func TestItemQuery_SendsParentAsQueryParam(t *testing.T) {
+	var gotQuery string
+	var gotPath string
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.Query().Get("projectId")
+		w.WriteHeader(http.StatusAccepted)
+	})
+	p := New(vcrDef(), c, "")
+	res, err := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "prj_1/repo_1"})
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if gotPath != "/v1/vcr/repository/repo_1" {
+		t.Errorf("path = %q", gotPath)
+	}
+	if gotQuery != "prj_1" {
+		t.Errorf("projectId query = %q, want prj_1", gotQuery)
+	}
+	if res.ProgressResult.OperationStatus != resource.OperationStatusSuccess {
+		t.Errorf("status = %v", res.ProgressResult.OperationStatus)
+	}
+}
+
+func TestParentFromField_ListsFlatAndRecoversParent(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/vcr/repository" {
+			t.Errorf("List should be a single flat pass, got %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"repositories":[
+			{"id":"repo_1","projectId":"prj_1"},
+			{"id":"repo_2","projectId":"prj_2"}]}`)
+	})
+	p := New(vcrDef(), c, "")
+	res, err := p.List(context.Background(), &resource.ListRequest{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	want := []string{"prj_1/repo_1", "prj_2/repo_2"}
+	if len(res.NativeIDs) != 2 || res.NativeIDs[0] != want[0] || res.NativeIDs[1] != want[1] {
+		t.Errorf("NativeIDs = %v, want %v", res.NativeIDs, want)
+	}
+}
+
+// Read must carry ItemQuery too, not just Delete: GET on a container registry
+// repository is rejected without ?projectId=, and a failing Read makes formae
+// mark the resource Failed before it ever attempts the delete.
+func TestItemQuery_AppliesToRead(t *testing.T) {
+	var gotQuery string
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("projectId")
+		_, _ = io.WriteString(w, `{"repository":{"id":"repo_1","name":"api","projectId":"prj_1"}}`)
+	})
+	p := New(vcrDef(), c, "")
+	res, err := p.Read(context.Background(), &resource.ReadRequest{NativeID: "prj_1/repo_1"})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if gotQuery != "prj_1" {
+		t.Errorf("Read projectId query = %q, want prj_1", gotQuery)
+	}
+	if res.ErrorCode != "" {
+		t.Errorf("ErrorCode = %v", res.ErrorCode)
+	}
+}

@@ -84,12 +84,14 @@ func TestDefinitionsAreWellFormed(t *testing.T) {
 			if def.ParentProperty == "" {
 				t.Errorf("%s: scoped but no ParentProperty", def.Type)
 			}
-			if !strings.Contains(def.CollectionPath, "{parent}") {
+			// A parent-from-field resource is listed account-wide, so its
+			// collection path carries no parent segment by design.
+			if def.ParentFromField == "" && !strings.Contains(def.CollectionPath, "{parent}") {
 				t.Errorf("%s: scoped but CollectionPath has no {parent}", def.Type)
 			}
 		}
-		if def.Scope == rest.ScopeParent && def.ParentListPath == "" {
-			t.Errorf("%s: parent-scoped but no ParentListPath — discovery cannot enumerate", def.Type)
+		if def.Scope == rest.ScopeParent && def.ParentListPath == "" && def.ParentFromField == "" {
+			t.Errorf("%s: parent-scoped but neither ParentListPath nor ParentFromField — discovery cannot enumerate", def.Type)
 		}
 
 		// Every createOnly field must actually be a declared field, or the

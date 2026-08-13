@@ -246,6 +246,24 @@ func stringField(raw props, field string) string {
 	return s
 }
 
+// itemRequest is request() plus any ItemQuery parameters, resolved against the
+// native id. Used for every call against the item path.
+func (r *Resource) itemRequest(method, p string, body any, parent, id string) vercelapi.Request {
+	req := r.request(method, p, body)
+	if len(r.def.ItemQuery) == 0 {
+		return req
+	}
+	merged := make(map[string]string, len(req.Query)+len(r.def.ItemQuery))
+	for k, v := range req.Query {
+		merged[k] = v
+	}
+	for k, v := range r.def.ItemQuery {
+		merged[k] = path(v, parent, id)
+	}
+	req.Query = merged
+	return req
+}
+
 func (r *Resource) request(method, p string, body any) vercelapi.Request {
 	return vercelapi.Request{Method: method, Path: p, Body: body, Query: r.def.Query}
 }
@@ -289,6 +307,11 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		}
 	}
 
+	createBody := r.body(desired, false)
+	if r.def.ParentInBody && parent != "" {
+		createBody[r.def.apiName(r.def.ParentProperty)] = parent
+	}
+
 	createPath, err := fillProps(path(r.def.createPath(), parent, ""), desired)
 	if err != nil {
 		return prov.FailCreate(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
@@ -296,7 +319,7 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 
 	var created props
 	err = r.client.Do(ctx,
-		r.request(r.def.createMethod(), createPath, r.body(desired, false)),
+		r.request(r.def.createMethod(), createPath, createBody),
 		&created)
 	if err != nil {
 		return prov.FailCreate(vercelapi.ClassifyError(err), err.Error()), nil
@@ -379,7 +402,7 @@ func (r *Resource) fetch(ctx context.Context, parent, id string) (props, error) 
 	}
 
 	var got props
-	if err := r.client.Do(ctx, r.request("GET", path(r.def.ItemPath, parent, id), nil), &got); err != nil {
+	if err := r.client.Do(ctx, r.itemRequest("GET", path(r.def.ItemPath, parent, id), nil, parent, id), &got); err != nil {
 		return nil, err
 	}
 	return r.unwrap(got), nil
@@ -414,7 +437,7 @@ func (r *Resource) Update(ctx context.Context, req *resource.UpdateRequest) (*re
 
 	var updated props
 	err = r.client.Do(ctx,
-		r.request(r.def.updateMethod(), path(r.def.itemPathFor("update"), parent, id), r.body(desired, true)),
+		r.itemRequest(r.def.updateMethod(), path(r.def.itemPathFor("update"), parent, id), r.body(desired, true), parent, id),
 		&updated)
 	if err != nil {
 		return prov.FailUpdate(vercelapi.ClassifyError(err), err.Error()), nil
@@ -444,7 +467,8 @@ func (r *Resource) Delete(ctx context.Context, req *resource.DeleteRequest) (*re
 	if r.def.DeleteBody != nil {
 		body = fillTemplate(map[string]any(r.def.DeleteBody), parent, id)
 	}
-	if err := r.client.Do(ctx, r.request(r.def.deleteMethod(), path(r.def.itemPathFor("delete"), parent, id), body), nil); err != nil {
+	delReq := r.itemRequest(r.def.deleteMethod(), path(r.def.itemPathFor("delete"), parent, id), body, parent, id)
+	if err := r.client.Do(ctx, delReq, nil); err != nil {
 		if vercelapi.IsNotFound(err) {
 			return prov.SuccessDelete(req.NativeID), nil
 		}
@@ -463,6 +487,27 @@ func (r *Resource) Status(ctx context.Context, req *resource.StatusRequest) (*re
 }
 
 func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
+	// Listed account-wide, with each item naming its own parent — used where a
+	// resource is addressed per-parent but enumerated globally. A VCR
+	// repository listing returns every repository with its projectId attached,
+	// so there is no parent collection to walk and parents() must not be
+	// consulted at all.
+	if r.def.ParentFromField != "" {
+		items, err := r.collection(ctx, "")
+		if err != nil {
+			return &resource.ListResult{NativeIDs: []string{}}, nil
+		}
+		nativeIDs := []string{}
+		for _, item := range items {
+			id := r.idOf(item)
+			itemParent := stringField(item, r.def.ParentFromField)
+			if id != "" && itemParent != "" {
+				nativeIDs = append(nativeIDs, r.joinNativeID(itemParent, id))
+			}
+		}
+		return &resource.ListResult{NativeIDs: nativeIDs}, nil
+	}
+
 	parents, err := r.parents(ctx)
 	if err != nil {
 		// A single resource type the token cannot read must not abort

@@ -4,13 +4,12 @@
 // Conformance test — VERCEL::VCR::Repository (container registry).
 // Provisions its own project. The API has no update endpoint.
 //
-// KNOWN TO FAIL at Destroy. Verified 2026-08-13: Create, Verify, Extract and
-// Sync all pass; Destroy returns
+// Previously failed at Destroy with
 //   400 bad_request: "Invalid request: missing required property `projectId`."
-// This one IS a plugin gap, not the environment: delete needs the parent
-// project id, but the native id is the bare repository id and DeleteBody can
-// only interpolate {id} and {parent}. Fixing it needs an engine change — see
-// "Engine capability still needed" in docs/RESOURCES.md.
+// Delete needs ?projectId=, which was not recoverable from a native id of just
+// the repository id. Fixed: the project is now the native id's parent, sent in
+// the create body via ParentInBody and in the delete query via DeleteQuery,
+// with discovery listing account-wide via ParentFromField.
 
 amends "@formae/forma.pkl"
 import "@vercel/core/vercel.pkl"
