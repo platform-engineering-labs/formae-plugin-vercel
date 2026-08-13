@@ -64,10 +64,14 @@ class DrainHTTPDelivery extends DrainDelivery {
     @formae.FieldHint { requiredOnCreate = true }
     encoding: "json"|"ndjson"
 
-    /// Headers sent with every delivery request. The API requires the key —
-    /// leave the mapping empty rather than omitting it.
+    /// Headers sent with every delivery request.
+    ///
+    /// Non-optional with an empty default: the API rejects an HTTP delivery
+    /// whose body omits `headers` ("Invalid request: `delivery` missing
+    /// required property `headers`"), and a nullable field that renders as an
+    /// absent key is exactly what triggers that.
     @formae.FieldHint {}
-    headers: Mapping<String, String>?
+    headers: Mapping<String, String> = new {}
 
     /// Compression applied to the request body.
     @formae.FieldHint {}
