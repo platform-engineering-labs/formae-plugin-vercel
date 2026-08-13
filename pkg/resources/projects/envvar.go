@@ -263,13 +263,9 @@ func (e *EnvVar) Status(_ context.Context, req *resource.StatusRequest) (*resour
 }
 
 func (e *EnvVar) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
-	projectIDs := []string{e.ProjectScope}
-	if e.ProjectScope == "" {
-		ids, err := listProjectIDs(ctx, e.Client)
-		if err != nil {
-			return &resource.ListResult{NativeIDs: []string{}}, nil
-		}
-		projectIDs = ids
+	projectIDs, err := prov.ProjectIDs(ctx, e.Client, e.ProjectScope)
+	if err != nil {
+		return &resource.ListResult{NativeIDs: []string{}}, nil
 	}
 
 	nativeIDs := []string{}

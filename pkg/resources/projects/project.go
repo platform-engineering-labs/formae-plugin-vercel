@@ -6,10 +6,8 @@
 package projects
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"strconv"
 
 	"github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/prov"
 	"github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/registry"
@@ -19,9 +17,6 @@ import (
 
 // ResourceTypeProject is the formae type id for a Vercel project.
 const ResourceTypeProject = "VERCEL::Projects::Project"
-
-// listPageSize is what we ask Vercel for per page during discovery.
-const listPageSize = 100
 
 func init() {
 	registry.Register(
@@ -172,70 +167,9 @@ func (p *Project) Status(_ context.Context, req *resource.StatusRequest) (*resou
 }
 
 func (p *Project) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
-	ids, err := listProjectIDs(ctx, p.Client)
+	ids, err := prov.ProjectIDs(ctx, p.Client, "")
 	if err != nil {
 		return &resource.ListResult{NativeIDs: []string{}}, nil
 	}
 	return &resource.ListResult{NativeIDs: ids}, nil
-}
-
-// projectListResponse covers both documented shapes of GET /v10/projects:
-// a bare array, or an object with a pagination cursor.
-type projectListResponse struct {
-	Projects   []ProjectProperties `json:"projects"`
-	Pagination *struct {
-		Next json.Number `json:"next"`
-	} `json:"pagination"`
-}
-
-// decodeProjectList handles both shapes: a bare array of projects, or the
-// {projects, pagination} envelope.
-func decodeProjectList(raw json.RawMessage) (projectListResponse, error) {
-	var out projectListResponse
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) > 0 && trimmed[0] == '[' {
-		return out, json.Unmarshal(trimmed, &out.Projects)
-	}
-	return out, json.Unmarshal(trimmed, &out)
-}
-
-// listProjectIDs walks every page of GET /v10/projects and returns project ids.
-// Discovery wants the whole set, so paging happens here rather than being
-// surfaced through ListResult.NextPageToken.
-func listProjectIDs(ctx context.Context, c *vercelapi.Client) ([]string, error) {
-	var ids []string
-	from := ""
-	for {
-		query := map[string]string{"limit": strconv.Itoa(listPageSize)}
-		if from != "" {
-			query["from"] = from
-		}
-		var raw json.RawMessage
-		if err := c.Do(ctx, vercelapi.Request{
-			Method: "GET",
-			Path:   "/v10/projects",
-			Query:  query,
-		}, &raw); err != nil {
-			return ids, err
-		}
-		page, err := decodeProjectList(raw)
-		if err != nil {
-			return ids, err
-		}
-		for _, prj := range page.Projects {
-			if prj.ID != "" {
-				ids = append(ids, prj.ID)
-			}
-		}
-		if page.Pagination == nil || page.Pagination.Next.String() == "" {
-			return ids, nil
-		}
-		next := page.Pagination.Next.String()
-		if next == from {
-			// Defensive: a server that keeps returning the same cursor would
-			// otherwise spin forever.
-			return ids, nil
-		}
-		from = next
-	}
 }
