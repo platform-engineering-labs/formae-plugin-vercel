@@ -1,0 +1,522 @@
+/*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/// Vercel Flags — feature flag definitions, segments and SDK keys.
+///
+/// Every endpoint in this module hangs off a project and is created with `PUT`
+/// rather than `POST`, so native ids are `{projectId}/{id}`.
+///
+/// Terraform's `vercel_feature_flag_config` has no counterpart here: it maps to
+/// `/v1/projects/{projectIdOrName}/feature-flags/settings`, a per-project
+/// singleton with no id of its own, which formae cannot model yet.
+///
+/// Reference: <https://vercel.com/docs/rest-api#feature-flags>
+module featureflags
+
+import "@formae/formae.pkl"
+
+// =============================================================================
+// Shared rule-engine types
+//
+// Flags and segments evaluate the same little rule language: a condition
+// compares a left-hand operand against a right-hand one, and a rule produces an
+// outcome. The API reference documents each shape as an `anyOf`, so each
+// alternative is its own sub-resource here and the property takes a union —
+// flattening them into one optional-heavy class would let formae send
+// `"weights": {}` into a variant outcome, which the API rejects.
+// =============================================================================
+
+/// Comparison operator of a condition. `!`-prefixed operators are negations,
+/// `ex` tests existence, and `before`/`after` compare timestamps.
+typealias FlagComparator =
+    "eq"|"!eq"|"oneOf"|"!oneOf"|"containsAllOf"|"containsAnyOf"|"containsNoneOf"
+    |"startsWith"|"!startsWith"|"endsWith"|"!endsWith"|"contains"|"!contains"
+    |"ex"|"!ex"|"gt"|"gte"|"lt"|"lte"|"regex"|"!regex"|"before"|"after"
+
+/// Left-hand operand matching the segment the flag is evaluated for.
+@formae.SubResourceHint {}
+class FlagSegmentOperand extends formae.SubResource {
+    /// Discriminator. Always `"segment"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    type: "segment" = "segment"
+}
+
+/// Left-hand operand — or split base — reading an attribute off the entity
+/// being evaluated, e.g. `kind = "user"`, `attribute = "email"`.
+@formae.SubResourceHint {}
+class FlagEntityOperand extends formae.SubResource {
+    /// Discriminator. Always `"entity"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    type: "entity" = "entity"
+
+    /// The entity kind to read, e.g. `"user"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    kind: String
+
+    /// The attribute of that entity to read, e.g. `"email"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    attribute: String
+}
+
+/// One entry of a `list` right-hand operand.
+@formae.SubResourceHint {}
+class FlagListItem extends formae.SubResource {
+    /// The value to compare against.
+    @formae.FieldHint { requiredOnCreate = true }
+    value: String|Number
+
+    /// Optional display label for the entry.
+    @formae.FieldHint {}
+    label: String? = null
+
+    /// Optional free-text note explaining why the entry is in the list.
+    @formae.FieldHint {}
+    note: String? = null
+}
+
+/// Right-hand operand holding a list of values, for `oneOf`-style comparisons.
+@formae.SubResourceHint {}
+class FlagListOperand extends formae.SubResource {
+    /// Discriminator: `"list"` for a stored list, `"list/inline"` for one
+    /// written out in place.
+    @formae.FieldHint { requiredOnCreate = true }
+    type: "list"|"list/inline"
+
+    /// The entries of the list. At most 10000.
+    @formae.FieldHint { requiredOnCreate = true }
+    items: Listing<FlagListItem>
+}
+
+/// Right-hand operand holding a regular expression, for `regex`/`!regex`.
+@formae.SubResourceHint {}
+class FlagRegexOperand extends formae.SubResource {
+    /// Discriminator. Always `"regex"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    type: "regex" = "regex"
+
+    /// The pattern source, without delimiters.
+    @formae.FieldHint { requiredOnCreate = true }
+    pattern: String
+
+    /// Regular expression flags, e.g. `"i"`. Required by the API even when
+    /// empty.
+    @formae.FieldHint { requiredOnCreate = true }
+    flags: String
+}
+
+/// Modifiers applied to a comparison.
+@formae.SubResourceHint {}
+class FlagCompareOptions extends formae.SubResource {
+    /// Compare case-insensitively.
+    @formae.FieldHint {}
+    ignoreCase: Boolean? = null
+}
+
+/// One condition of a rule. All conditions of a rule must hold.
+@formae.SubResourceHint {}
+class FlagCondition extends formae.SubResource {
+    /// What is being compared.
+    @formae.FieldHint { requiredOnCreate = true }
+    lhs: FlagSegmentOperand|FlagEntityOperand
+
+    /// How it is compared.
+    @formae.FieldHint { requiredOnCreate = true }
+    cmp: FlagComparator
+
+    /// What it is compared against. Omitted for existence tests (`ex`/`!ex`).
+    @formae.FieldHint {}
+    rhs: (String|Number|Boolean|FlagListOperand|FlagRegexOperand)? = null
+
+    /// Optional comparison modifiers.
+    @formae.FieldHint {}
+    cmpOptions: FlagCompareOptions? = null
+}
+
+/// Outcome serving one fixed variant.
+@formae.SubResourceHint {}
+class FlagVariantOutcome extends formae.SubResource {
+    /// Discriminator. Always `"variant"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    type: "variant" = "variant"
+
+    /// Id of the variant to serve.
+    @formae.FieldHint { requiredOnCreate = true }
+    variantId: String
+}
+
+/// Outcome splitting traffic across variants by a stable hash of an entity
+/// attribute.
+@formae.SubResourceHint {}
+class FlagSplitOutcome extends formae.SubResource {
+    /// Discriminator. Always `"split"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    type: "split" = "split"
+
+    /// The entity attribute the split is keyed on.
+    @formae.FieldHint { requiredOnCreate = true }
+    base: FlagEntityOperand
+
+    /// The distribution, keyed by variant id.
+    @formae.FieldHint { requiredOnCreate = true }
+    weights: Mapping<String, Number>
+
+    /// Variant served when the base attribute does not exist.
+    @formae.FieldHint { requiredOnCreate = true }
+    defaultVariantId: String
+}
+
+/// One step of a timed rollout.
+@formae.SubResourceHint {}
+class FlagRolloutSlot extends formae.SubResource {
+    /// Promille of traffic sent to `rollToVariantId`, 0–100000 (1000 = 1%).
+    @formae.FieldHint { requiredOnCreate = true }
+    promille: Int
+
+    /// How long this promille is served, in milliseconds, before the next slot.
+    @formae.FieldHint { requiredOnCreate = true }
+    durationMs: Int
+}
+
+/// Outcome rolling traffic from one variant to another over time. After the
+/// last slot expires, 100% is served indefinitely; that final implicit slot is
+/// not listed.
+@formae.SubResourceHint {}
+class FlagRolloutOutcome extends formae.SubResource {
+    /// Discriminator. Always `"rollout"`.
+    @formae.FieldHint { requiredOnCreate = true }
+    type: "rollout" = "rollout"
+
+    /// The entity attribute the rollout is keyed on.
+    @formae.FieldHint { requiredOnCreate = true }
+    base: FlagEntityOperand
+
+    /// Epoch milliseconds at which the rollout begins.
+    @formae.FieldHint { requiredOnCreate = true }
+    startTimestamp: Int
+
+    /// The variant to roll away from.
+    @formae.FieldHint { requiredOnCreate = true }
+    rollFromVariantId: String
+
+    /// The variant to roll towards.
+    @formae.FieldHint { requiredOnCreate = true }
+    rollToVariantId: String
+
+    /// Variant served when the base attribute does not exist.
+    @formae.FieldHint { requiredOnCreate = true }
+    defaultVariantId: String
+
+    /// The rollout steps, in order. At least one.
+    @formae.FieldHint { requiredOnCreate = true }
+    slots: Listing<FlagRolloutSlot>
+}
+
+/// What a rule serves when it matches.
+typealias FlagOutcome = FlagVariantOutcome|FlagSplitOutcome|FlagRolloutOutcome
+
+/// One targeting rule. The first rule whose conditions all hold decides the
+/// outcome; if none does, the environment's `fallthrough` applies.
+@formae.SubResourceHint {}
+class FlagRule extends formae.SubResource {
+    /// Stable id of the rule, unique within the environment.
+    @formae.FieldHint { requiredOnCreate = true }
+    id: String
+
+    /// Conditions that must all hold for the rule to match.
+    @formae.FieldHint { requiredOnCreate = true }
+    conditions: Listing<FlagCondition>
+
+    /// What to serve when the rule matches.
+    @formae.FieldHint { requiredOnCreate = true }
+    outcome: FlagOutcome
+}
+
+/// An exact value pinned into a segment or a flag's targeting overrides.
+@formae.SubResourceHint {}
+class FlagEntityValue extends formae.SubResource {
+    /// The exact value to match, e.g. an email address.
+    @formae.FieldHint { requiredOnCreate = true }
+    value: String
+
+    /// Optional free-text note explaining why the value is pinned.
+    @formae.FieldHint {}
+    note: String? = null
+}
+
+// =============================================================================
+// VERCEL::FeatureFlags::Flag
+// =============================================================================
+
+/// The value shape a flag returns.
+typealias FlagKind = "boolean"|"string"|"number"|"json"
+
+/// Whether a flag is live or retired. Archiving is the API's soft delete;
+/// `DELETE` removes the flag outright.
+typealias FlagState = "active"|"archived"
+
+/// One possible value of a flag.
+@formae.SubResourceHint {}
+class FlagVariant extends formae.SubResource {
+    /// Stable variant id, referenced by rules, outcomes and targeting.
+    @formae.FieldHint { requiredOnCreate = true }
+    id: String
+
+    /// The value served for this variant. Must match the flag's `kind`.
+    @formae.FieldHint { requiredOnCreate = true }
+    value: String|Number|Boolean|Listing<Any>|Mapping<String, Any>
+
+    /// Human-readable label shown in the Vercel dashboard.
+    @formae.FieldHint {}
+    label: String? = null
+
+    /// Human-readable description of what this variant does.
+    @formae.FieldHint {}
+    description: String? = null
+}
+
+/// Links an environment's configuration to another environment's, so the flag
+/// is evaluated with that environment's rules.
+@formae.SubResourceHint {}
+class FlagEnvironmentReuse extends formae.SubResource {
+    /// Whether the link is in effect.
+    @formae.FieldHint { requiredOnCreate = true }
+    active: Boolean
+
+    /// The environment to take the configuration from.
+    @formae.FieldHint { requiredOnCreate = true }
+    environment: String
+}
+
+/// The flag's configuration in one environment.
+@formae.SubResourceHint {}
+class FlagEnvironment extends formae.SubResource {
+    /// Whether the flag is evaluated at all in this environment. When false the
+    /// flag serves `pausedOutcome`.
+    @formae.FieldHint { requiredOnCreate = true }
+    active: Boolean
+
+    /// What to serve while the flag is paused in this environment.
+    @formae.FieldHint { requiredOnCreate = true }
+    pausedOutcome: FlagVariantOutcome
+
+    /// Targeting rules, evaluated in order. May be empty.
+    @formae.FieldHint { requiredOnCreate = true }
+    rules: Listing<FlagRule>
+
+    /// What to serve when no rule matches.
+    @formae.FieldHint { requiredOnCreate = true }
+    fallthrough: FlagOutcome
+
+    /// Optionally evaluate this environment with another environment's
+    /// configuration.
+    @formae.FieldHint {}
+    reuse: FlagEnvironmentReuse? = null
+
+    /// Values pinned to a variant, bypassing the rules. The reference documents
+    /// this only as three levels of string keys over a list of values; in the
+    /// dashboard they read as variant id → entity kind → attribute.
+    @formae.FieldHint {}
+    targets: Mapping<String, Mapping<String, Mapping<String, Listing<FlagEntityValue>>>>?
+
+    /// Revision of this environment's configuration. Server-assigned: set it
+    /// only to match what a read returned.
+    @formae.FieldHint {}
+    revision: Int? = null
+}
+
+/// A feature flag definition.
+/// Maps to `PUT /v1/projects/{projectIdOrName}/feature-flags/flags`.
+///
+/// Native id is `{projectId}/{flagId}`.
+///
+/// Three server-owned fields are deliberately unmanaged, because formae would
+/// report them as drift on every sync: `seed` and `revision`, both regenerated
+/// on write, and `experiment`, which belongs to Vercel's experimentation
+/// product rather than to the flag's declared state.
+@formae.ResourceHint {
+    type = "VERCEL::FeatureFlags::Flag"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class FeatureFlag extends formae.Resource {
+    fixed hidden type: String = "VERCEL::FeatureFlags::Flag"
+
+    /// Owning project id or name. Immutable — the API has no move operation.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// The flag key used in application code. Letters, digits, dashes and
+    /// underscores, max 512 characters, unique within the project.
+    ///
+    /// Immutable: the documented `PATCH` body does not accept it.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    slug: String
+
+    /// The value shape the flag returns. Immutable: the documented `PATCH` body
+    /// does not accept it either, and changing it would invalidate every
+    /// variant.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    kind: FlagKind
+
+    /// The values the flag can take. Optional in the API, but Vercel fills in
+    /// defaults when it is omitted, which then reads back as drift — so declare
+    /// them.
+    @formae.FieldHint { requiredOnCreate = true; updateMethod = "Set" }
+    variants: Listing<FlagVariant>
+
+    /// Per-environment configuration, keyed by environment name
+    /// (`"production"`, `"preview"`, `"development"`, or a custom
+    /// environment's slug).
+    @formae.FieldHint { requiredOnCreate = true }
+    environments: Mapping<String, FlagEnvironment>
+
+    /// Human-readable description of what the flag controls.
+    @formae.FieldHint {}
+    description: String? = null
+
+    /// Whether the flag is live or archived. Defaults to `active`, which is
+    /// what the API assigns on create.
+    @formae.FieldHint {}
+    state: FlagState = "active"
+
+    /// User ids of the flag's maintainers.
+    @formae.FieldHint { updateMethod = "Set" }
+    maintainerIds: Listing<String>?
+
+    /// Mark the flag as permanent, so cleanup tooling leaves it alone.
+    @formae.FieldHint {}
+    permanent: Boolean? = null
+
+    /// Tags for grouping flags in the dashboard. Max 64 characters each.
+    @formae.FieldHint { updateMethod = "Set" }
+    tags: Listing<String>?
+}
+
+// =============================================================================
+// VERCEL::FeatureFlags::Segment
+// =============================================================================
+
+/// The membership rules of a segment.
+@formae.SubResourceHint {}
+class SegmentData extends formae.SubResource {
+    /// Rules deciding membership. May be empty when `include`/`exclude` alone
+    /// define the segment.
+    @formae.FieldHint {}
+    rules: Listing<FlagRule>?
+
+    /// Values always in the segment, keyed entity kind → attribute → values.
+    @formae.FieldHint {}
+    include: Mapping<String, Mapping<String, Listing<FlagEntityValue>>>?
+
+    /// Values never in the segment, keyed the same way. Takes precedence over
+    /// `include`.
+    @formae.FieldHint {}
+    exclude: Mapping<String, Mapping<String, Listing<FlagEntityValue>>>?
+}
+
+/// A reusable audience that flag rules can target.
+/// Maps to `PUT /v1/projects/{projectIdOrName}/feature-flags/segments`.
+///
+/// Native id is `{projectId}/{segmentId}`.
+///
+/// `usedByFlags` and `usedBySegments` are read-only back-references and are not
+/// modelled; neither is `createdBy`, which is attribution rather than declared
+/// state.
+@formae.ResourceHint {
+    type = "VERCEL::FeatureFlags::Segment"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class FeatureFlagSegment extends formae.Resource {
+    fixed hidden type: String = "VERCEL::FeatureFlags::Segment"
+
+    /// Owning project id or name. Immutable — the API has no move operation.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// The stable segment key used by flag rules. Immutable: the documented
+    /// `PATCH` body does not accept it.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    slug: String
+
+    /// The human-readable segment name shown in the dashboard.
+    ///
+    /// Named `segmentLabel` rather than `label` (the API's name) because
+    /// `formae.Resource` already reserves `label` for the resource's own name;
+    /// the plugin renames it on the wire.
+    @formae.FieldHint { requiredOnCreate = true }
+    segmentLabel: String
+
+    /// Human-readable overview of the segment's purpose.
+    @formae.FieldHint {}
+    description: String? = null
+
+    /// The membership rules. Required by the API, though every part of it is
+    /// optional — an empty `data` is a segment nobody is in.
+    @formae.FieldHint { requiredOnCreate = true }
+    data: SegmentData
+
+    /// Dashboard hint naming the entity attribute the segment is built around,
+    /// e.g. `"email"`. Required by the API on create.
+    @formae.FieldHint { requiredOnCreate = true }
+    hint: String
+}
+
+// =============================================================================
+// VERCEL::FeatureFlags::SDKKey
+// =============================================================================
+
+/// Which SDK an key authenticates. `server` keys are secret; `client` and
+/// `mobile` keys are shipped to end users.
+typealias SDKKeyType = "server"|"mobile"|"client"
+
+/// A Flags SDK key for one environment of a project.
+/// Maps to `PUT /v1/projects/{projectIdOrName}/feature-flags/sdk-keys`.
+///
+/// Native id is `{projectId}/{hashKey}` — the API keys SDK keys by `hashKey`,
+/// not `id`.
+///
+/// The API has no update endpoint, so every field is immutable and any change
+/// replaces the key. The cleartext secrets (`keyValue`, `tokenValue`,
+/// `connectionString`) are disclosed exactly once, at creation, and are
+/// deliberately not part of this resource's state — capture them from the apply
+/// output if you need them.
+@formae.ResourceHint {
+    type = "VERCEL::FeatureFlags::SDKKey"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class FeatureFlagSDKKey extends formae.Resource {
+    fixed hidden type: String = "VERCEL::FeatureFlags::SDKKey"
+
+    /// Owning project id or name. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// Which SDK the key authenticates. Immutable.
+    ///
+    /// Named `sdkKeyType` because that is what the *create* body calls it —
+    /// note that every read answers with `type` instead, which
+    /// `formae.Resource` reserves. The plugin sends the create-body name and
+    /// therefore never reads this field back.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    sdkKeyType: SDKKeyType
+
+    /// The environment the key authenticates against, e.g. `"production"` or a
+    /// custom environment's slug. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    environment: String
+
+    /// Optional label identifying the key in the dashboard. Immutable.
+    ///
+    /// Named `keyLabel` rather than `label` (the API's name) because
+    /// `formae.Resource` reserves `label`; the plugin renames it on the wire.
+    @formae.FieldHint { createOnly = true }
+    keyLabel: String? = null
+}
