@@ -102,6 +102,36 @@ func path(template, parent, id string) string {
 	return strings.ReplaceAll(out, "{id}", id)
 }
 
+// fillTemplate substitutes {parent} and {id} through a request-body template,
+// descending into nested objects and arrays. Values that are not strings pass
+// through untouched.
+func fillTemplate(v any, parent, id string) any {
+	switch t := v.(type) {
+	case string:
+		return path(t, parent, id)
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			out[k] = fillTemplate(val, parent, id)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = fillTemplate(val, parent, id)
+		}
+		return out
+	case []string:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = path(val, parent, id)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
 // body builds a request payload from the declared fields. The parent property
 // is excluded: it is a path segment, not a body field.
 func (r *Resource) body(p props, forUpdate bool) map[string]any {
@@ -197,6 +227,17 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		return r.bagCreate(ctx, parent, desired)
 	}
 
+	// An id taken from the desired document is checked before the write: an
+	// association we cannot address afterwards is worse than one never made.
+	declaredID := ""
+	if r.def.CreateIDFromProperty != "" {
+		declaredID, _ = desired[r.def.CreateIDFromProperty].(string)
+		if declaredID == "" {
+			return prov.FailCreate(resource.OperationErrorCodeInvalidRequest,
+				fmt.Sprintf("%s is required", r.def.CreateIDFromProperty)), nil
+		}
+	}
+
 	createPath, err := fillProps(path(r.def.createPath(), parent, ""), desired)
 	if err != nil {
 		return prov.FailCreate(resource.OperationErrorCodeInvalidRequest, err.Error()), nil
@@ -219,7 +260,10 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 		return prov.SuccessCreate(parent, r.toProperties(created, parent)), nil
 	}
 
-	id := stringField(created, r.def.createIDField())
+	id := declaredID
+	if id == "" {
+		id = stringField(created, r.def.createIDField())
+	}
 	if id == "" {
 		return prov.FailCreate(resource.OperationErrorCodeServiceInternalError,
 			fmt.Sprintf("create response missing %q", r.def.createIDField())), nil
@@ -343,7 +387,13 @@ func (r *Resource) Delete(ctx context.Context, req *resource.DeleteRequest) (*re
 	if r.def.Bag != nil {
 		return r.bagDelete(ctx, req, parent)
 	}
-	if err := r.client.Do(ctx, r.request("DELETE", path(r.def.itemPathFor("delete"), parent, id), nil), nil); err != nil {
+	// Some deletes name what to remove in a body rather than in the path, and
+	// some are not even a DELETE — an unlink is usually a POST.
+	var body any
+	if r.def.DeleteBody != nil {
+		body = fillTemplate(map[string]any(r.def.DeleteBody), parent, id)
+	}
+	if err := r.client.Do(ctx, r.request(r.def.deleteMethod(), path(r.def.itemPathFor("delete"), parent, id), body), nil); err != nil {
 		if vercelapi.IsNotFound(err) {
 			return prov.SuccessDelete(req.NativeID), nil
 		}
