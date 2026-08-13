@@ -79,9 +79,25 @@ type Definition struct {
 	ItemPathUpdate string
 	ItemPathDelete string
 
-	// CreateMethod defaults to POST, UpdateMethod to PATCH.
+	// CreateMethod defaults to POST, UpdateMethod to PATCH, DeleteMethod to
+	// DELETE. A DeleteMethod is needed for association resources whose
+	// lifecycle is a verb pair rather than CRUD: connect/disconnect and
+	// link/unlink are usually two POSTs.
 	CreateMethod string
 	UpdateMethod string
+	DeleteMethod string
+
+	// DeleteBody is a request-body template sent with the delete call, for the
+	// APIs that name what to remove in the body instead of the path — Global
+	// Config tokens are removed by DELETE /v1/global-config/{id}/tokens with
+	// {"tokens": [...]}, and project routes by a DELETE to the collection with
+	// {"routeIds": [...]}. The strings "{id}" and "{parent}" are substituted
+	// anywhere they appear, including inside nested objects and arrays. Nil —
+	// the default — sends no body at all.
+	//
+	// The path is still ItemPathDelete (or ItemPath); a bulk delete simply
+	// points it at the collection and leaves out the "{id}" placeholder.
+	DeleteBody map[string]any
 
 	// ListField is the key holding the array in CollectionPath's response;
 	// empty means the response is a bare array.
@@ -104,6 +120,15 @@ type Definition struct {
 	// not always consistent: creating a DNS record answers with `uid` while
 	// listing records returns `id`.
 	CreateIDField string
+
+	// CreateIDFromProperty takes the resource id from a declared property of
+	// the desired document instead of from the create response, for APIs whose
+	// response carries no usable id: POST /v1/projects/{id}/members "responds
+	// with the project ID on success" — the parent's id, not the member's —
+	// and association endpoints (link, connect) often answer with nothing at
+	// all. The property must be a non-empty string, checked before the write so
+	// nothing is created that cannot then be addressed.
+	CreateIDFromProperty string
 
 	// Fields are the managed property names as they appear in the PKL schema.
 	// Read returns only these (plus the id and parent), so unmanaged
@@ -166,6 +191,13 @@ func (d Definition) updateMethod() string {
 		return d.UpdateMethod
 	}
 	return "PATCH"
+}
+
+func (d Definition) deleteMethod() string {
+	if d.DeleteMethod != "" {
+		return d.DeleteMethod
+	}
+	return "DELETE"
 }
 
 func (d Definition) idField() string {

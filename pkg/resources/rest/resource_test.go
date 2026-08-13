@@ -503,6 +503,245 @@ func TestCreatePath_MissingPropertyIsRejected(t *testing.T) {
 	}
 }
 
+// -- verb pairs -------------------------------------------------------------
+
+// An association whose lifecycle is connect/disconnect rather than CRUD: the
+// link response carries no id of its own, the id is one of the properties, and
+// the unlink is a POST naming what to remove in its body.
+func blobConnectionDef() Definition {
+	return Definition{
+		Type:                 "VERCEL::Storage::BlobProjectConnection",
+		Scope:                ScopeParent,
+		ParentProperty:       "storeId",
+		ParentListPath:       "/v1/storage/stores",
+		ParentListField:      "stores",
+		CollectionPath:       "/v1/storage/stores/{parent}/connections",
+		ItemPathDelete:       "/v1/storage/stores/{parent}/disconnect",
+		ListField:            "connections",
+		IDField:              "projectId",
+		CreateIDFromProperty: "projectId",
+		DeleteMethod:         "POST",
+		DeleteBody:           map[string]any{"projectId": "{id}"},
+		ReadViaCollection:    true,
+		Fields:               []string{"projectId"},
+		CreateOnly:           []string{"projectId"},
+		NoUpdate:             true,
+	}
+}
+
+func TestVerbPair_LinkTakesIDFromProperty(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/storage/stores/store_1/connections" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		// The link verb answers with no id of its own.
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	})
+	p := New(blobConnectionDef(), c, "")
+	props, _ := json.Marshal(map[string]any{"storeId": "store_1", "projectId": "prj_1"})
+	res, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	pr := res.ProgressResult
+	if pr.OperationStatus != resource.OperationStatusSuccess {
+		t.Fatalf("status = %v: %s", pr.OperationStatus, pr.StatusMessage)
+	}
+	if pr.NativeID != "store_1/prj_1" {
+		t.Errorf("NativeID = %q, want store_1/prj_1", pr.NativeID)
+	}
+}
+
+func TestVerbPair_LinkRequiresTheIDProperty(t *testing.T) {
+	p := New(blobConnectionDef(), nil, "")
+	props, _ := json.Marshal(map[string]any{"storeId": "store_1"})
+	res, _ := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if res.ProgressResult.ErrorCode != resource.OperationErrorCodeInvalidRequest {
+		t.Errorf("ErrorCode = %v, want InvalidRequest", res.ProgressResult.ErrorCode)
+	}
+}
+
+func TestVerbPair_UnlinkUsesItsOwnVerbAndBody(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/storage/stores/store_1/disconnect" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["projectId"] != "prj_1" {
+			t.Errorf("body = %v", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	p := New(blobConnectionDef(), c, "")
+	res, _ := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "store_1/prj_1"})
+	if res.ProgressResult.OperationStatus != resource.OperationStatusSuccess {
+		t.Errorf("status = %v", res.ProgressResult.OperationStatus)
+	}
+}
+
+// Read infers existence from the listing, since an association has no item GET.
+func TestVerbPair_ReadInfersExistenceFromTheListing(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/storage/stores/store_1/connections" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"connections":[{"projectId":"prj_other"}]}`)
+	})
+	p := New(blobConnectionDef(), c, "")
+	res, _ := p.Read(context.Background(), &resource.ReadRequest{NativeID: "store_1/prj_1"})
+	if res.ErrorCode != resource.OperationErrorCodeNotFound {
+		t.Errorf("ErrorCode = %v, want NotFound", res.ErrorCode)
+	}
+}
+
+// Some create responses answer with the *parent's* id — POST
+// /v1/projects/{id}/members "responds with the project ID on success". Taking
+// the id from the response would mint "prj_1/prj_1", which never reads back.
+func TestCreateIDFromProperty_IgnoresAMisleadingResponseID(t *testing.T) {
+	def := Definition{
+		Type:                 "VERCEL::Projects::Member",
+		Scope:                ScopeProject,
+		ParentProperty:       "projectId",
+		CollectionPath:       "/v1/projects/{parent}/members",
+		ItemPathDelete:       "/v1/projects/{parent}/members/{id}",
+		ListField:            "members",
+		IDField:              "uid",
+		CreateIDFromProperty: "uid",
+		ReadViaCollection:    true,
+		Fields:               []string{"uid", "role"},
+		CreateOnly:           []string{"uid"},
+		NoUpdate:             true,
+	}
+	c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"id":"prj_1"}`)
+	})
+	p := New(def, c, "")
+	props, _ := json.Marshal(map[string]any{"projectId": "prj_1", "uid": "user_1", "role": "MEMBER"})
+	res, _ := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if res.ProgressResult.NativeID != "prj_1/user_1" {
+		t.Errorf("NativeID = %q, want prj_1/user_1", res.ProgressResult.NativeID)
+	}
+}
+
+// -- bulk delete with a request body ----------------------------------------
+
+// Global Config tokens are removed by a DELETE to the collection carrying the
+// tokens to remove; there is no per-token path.
+func configTokenDef() Definition {
+	return Definition{
+		Type:              "VERCEL::GlobalConfig::Token",
+		Scope:             ScopeParent,
+		ParentProperty:    "edgeConfigId",
+		ParentListPath:    "/v1/global-config",
+		CollectionPath:    "/v1/global-config/{parent}/token",
+		ItemPathDelete:    "/v1/global-config/{parent}/tokens",
+		ListPath:          "/v1/global-config/{parent}/tokens",
+		ListField:         "tokens",
+		IDField:           "id",
+		ReadViaCollection: true,
+		DeleteBody:        map[string]any{"tokens": []string{"{id}"}},
+		Fields:            []string{"label"},
+		CreateOnly:        []string{"label"},
+		NoUpdate:          true,
+	}
+}
+
+func TestBulkDelete_SendsTheBodyToTheCollection(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/v1/global-config/ecfg_1/tokens" {
+			t.Errorf("got %s %s", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Tokens []string `json:"tokens"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(body.Tokens) != 1 || body.Tokens[0] != "tok_1" {
+			t.Errorf("body = %v", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	p := New(configTokenDef(), c, "")
+	res, _ := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "ecfg_1/tok_1"})
+	if res.ProgressResult.OperationStatus != resource.OperationStatusSuccess {
+		t.Errorf("status = %v", res.ProgressResult.OperationStatus)
+	}
+}
+
+// A bulk delete of something already gone is still a converged delete.
+func TestBulkDelete_NotFoundIsIdempotent(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"error":{"code":"not_found","message":"gone"}}`)
+	})
+	p := New(configTokenDef(), c, "")
+	res, _ := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "ecfg_1/tok_1"})
+	if res.ProgressResult.OperationStatus != resource.OperationStatusSuccess {
+		t.Errorf("status = %v, want Success", res.ProgressResult.OperationStatus)
+	}
+}
+
+func TestBulkDelete_APIFailureIsReported(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, `{"error":{"code":"forbidden","message":"nope"}}`)
+	})
+	p := New(configTokenDef(), c, "")
+	res, _ := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "ecfg_1/tok_1"})
+	if res.ProgressResult.ErrorCode != resource.OperationErrorCodeAccessDenied {
+		t.Errorf("ErrorCode = %v, want AccessDenied", res.ProgressResult.ErrorCode)
+	}
+}
+
+// The delete body is a template: {id} and {parent} are substituted wherever
+// they appear, including inside nested objects and arrays.
+func TestDeleteBody_SubstitutesNestedPlaceholders(t *testing.T) {
+	def := configTokenDef()
+	def.DeleteBody = map[string]any{
+		"scope":  map[string]any{"edgeConfigId": "{parent}"},
+		"tokens": []any{"{id}"},
+		"force":  true,
+	}
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		scope, _ := body["scope"].(map[string]any)
+		if scope["edgeConfigId"] != "ecfg_1" {
+			t.Errorf("scope = %v", body["scope"])
+		}
+		tokens, _ := body["tokens"].([]any)
+		if len(tokens) != 1 || tokens[0] != "tok_1" {
+			t.Errorf("tokens = %v", body["tokens"])
+		}
+		if body["force"] != true {
+			t.Errorf("non-string values must pass through: %v", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	p := New(def, c, "")
+	if _, err := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "ecfg_1/tok_1"}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
+// A definition that declares no delete body must keep sending none: a stray
+// body changes how some APIs behave.
+func TestDelete_SendsNoBodyByDefault(t *testing.T) {
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if len(body) != 0 {
+			t.Errorf("unexpected delete body %q", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	p := New(drainDef(), c, "")
+	if _, err := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "drain_1"}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+}
+
 // Access groups key their id `accessGroupId`, including in the parent
 // collection used to enumerate children.
 func TestParentIDField(t *testing.T) {
