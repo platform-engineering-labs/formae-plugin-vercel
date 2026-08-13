@@ -1,0 +1,50 @@
+/*
+ * Conformance Test: Replace Resource
+ *
+ * This file modifies a createOnly field to trigger resource replacement.
+ * Changes from resource.pkl:
+ *   - region: changed from "us-east-1" to "us-west-2"
+ *
+ * The region field has createOnly=true, so formae should delete the
+ * existing resource and create a new one with the new region.
+ */
+amends "@formae/forma.pkl"
+import "@formae/formae.pkl"
+
+import "@vercel/core/vercel.pkl"
+
+local stackName = "plugin-sdk-test-stack"
+local testRunID = read("env:FORMAE_TEST_RUN_ID")
+
+forma {
+  new formae.Stack {
+    label = stackName
+    description = "Plugin SDK conformance test stack"
+  }
+
+  new formae.Target {
+    label = "example-target"
+    namespace = "VERCEL"
+    config = new Mapping {
+      ["region"] = "us-west-2"                            // CHANGED to match resource
+    }
+  }
+
+  new vercel.ExampleResource {
+    label = "plugin-sdk-test-resource"
+    name = "formae-plugin-sdk-test-\(testRunID)"
+    description = "Test resource for plugin SDK conformance tests"
+    region = "us-west-2"                                  // CHANGED - triggers replacement
+
+    endpoint = new vercel.Endpoint {
+      url = "https://api.vercel.com"
+      port = 8080
+      protocol = "https"
+    }
+
+    tags = new Listing {
+      new vercel.Tag { key = "Environment"; value = "test" }
+      new vercel.Tag { key = "ManagedBy"; value = "formae" }
+    }
+  }
+}
