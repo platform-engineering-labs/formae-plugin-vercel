@@ -1,0 +1,95 @@
+/*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/// Team-scoped Vercel resources.
+///
+/// This module was opened for team membership and currently holds only the
+/// custom-certificate *upload* flow. `VERCEL::Teams::Member` is deliberately
+/// absent: every team-members endpoint puts the team id in the path
+/// (`/v3/teams/{teamId}/members`), but in this plugin the team is target
+/// configuration (`vercel.Config.teamId`) rather than resource state, and the
+/// REST engine's path templates can only interpolate a resource's own
+/// properties. See the note at the top of pkg/resources/defs/teams.go.
+module teams
+
+import "@formae/formae.pkl"
+
+// =============================================================================
+// VERCEL::Certs::UploadedCertificate
+// =============================================================================
+
+/// A TLS certificate you already hold, uploaded to Vercel.
+/// Maps to `PUT /v8/certs`.
+///
+/// This is the *upload* flow, and the counterpart to `vercel.Certificate`
+/// (`POST /v8/certs`), which instead asks Vercel to issue a certificate for a
+/// set of common names. Same collection, two different verbs and two different
+/// request bodies, so they are two resource types.
+///
+/// The three PEM blobs are write-only: they go up once and Vercel never returns
+/// them. Nothing else about the certificate is modelled either — `cns`,
+/// `expiresAt` and `autoRenew` are derived by Vercel from the uploaded material
+/// rather than declared, so a read reports only the id and there is nothing for
+/// a sync to diff.
+///
+/// The certs API has no update verb: replacing a certificate means uploading a
+/// new one, so every field is immutable.
+///
+/// Not discoverable. `GET /v8/certs` returns issued and uploaded certificates
+/// in one undifferentiated list, and `VERCEL::Certs::Certificate` already
+/// discovers that list; leaving discovery on here would report every
+/// certificate twice, under two types.
+///
+/// Uploading a custom certificate is an Enterprise feature — the API answers
+/// 402 on other plans.
+@formae.ResourceHint {
+    type = "VERCEL::Certs::UploadedCertificate"
+    identifier = "$.id"
+    discoverable = false
+}
+class UploadedCertificate extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Certs::UploadedCertificate"
+
+    /// The certificate itself, in PEM format. Sent as the API's `cert`.
+    ///
+    /// Accepts a `formae.Value` so it can be a formae-managed secret; formae
+    /// resolves it to a plain string before the plugin sees it. Write-only —
+    /// never read back, so it is not compared during a sync.
+    @formae.FieldHint {
+        createOnly = true
+        requiredOnCreate = true
+        writeOnly = true
+    }
+    cert: (formae.Value|String)
+
+    /// The Certificate Authority root certificate that signed `cert`, in PEM
+    /// format — for example one of Let's Encrypt's ISRG roots. Sent as the
+    /// API's `ca`. Write-only, and never read back.
+    @formae.FieldHint {
+        createOnly = true
+        requiredOnCreate = true
+        writeOnly = true
+    }
+    ca: (formae.Value|String)
+
+    /// The certificate's private key, in PEM format. Sent as the API's `key`.
+    ///
+    /// Secret. Put it in a `formae.Value` rather than a literal; it is
+    /// write-only and Vercel never returns it, so formae has no way to read it
+    /// back out of the account.
+    @formae.FieldHint {
+        createOnly = true
+        requiredOnCreate = true
+        writeOnly = true
+    }
+    key: (formae.Value|String)
+
+    /// Skip Vercel's validation of the uploaded certificate. A create-time
+    /// instruction, not stored state — Vercel does not report it back. Leave
+    /// unset unless you know why you need it.
+    @formae.FieldHint { createOnly = true }
+    skipValidation: Boolean? = null
+}
