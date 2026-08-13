@@ -1,0 +1,109 @@
+/*
+ * A whole project from one apply.
+ *
+ * Project, a staging custom environment, environment variables wired to both,
+ * a Global Config store and a webhook — all in one forma, with children
+ * referencing the project through `site.res.id` so a single apply provisions
+ * them in dependency order.
+ *
+ * Everything here is free: an empty project costs nothing and burns no build
+ * minutes. Global Config *writes* are metered on paid plans, but creating the
+ * store is not.
+ *
+ *   formae apply --mode reconcile --watch examples/full-stack/main.pkl
+ */
+amends "@formae/forma.pkl"
+
+import "@formae/formae.pkl"
+import "@vercel/core/vercel.pkl"
+
+local site = new vercel.Project {
+  label = "shop"
+  name = "shop"
+  framework = "nextjs"
+  buildCommand = "npm run build"
+  outputDirectory = ".next"
+  installCommand = "npm ci"
+  nodeVersion = "22.x"
+}
+
+forma {
+  new formae.Stack {
+    label = "shop"
+    description = "Project, environments, config and a webhook"
+  }
+
+  new formae.Target {
+    label = "vercel"
+    config = new vercel.Config {}
+  }
+
+  site
+
+  // A named environment that deploys from any branch starting with "staging/".
+  new vercel.CustomEnvironment {
+    label = "staging-env"
+    projectId = site.res.id
+    slug = "staging"                      // the API calls this `slug`, not `name`
+    description = "Pre-production"
+    branchMatcher = new vercel.BranchMatcher {
+      type = "startsWith"
+      pattern = "staging/"
+    }
+  }
+
+  // Non-secret, readable back verbatim.
+  new vercel.EnvironmentVariable {
+    label = "api-url"
+    projectId = site.res.id
+    key = "NEXT_PUBLIC_API_URL"
+    value = "https://api.example.com"
+    variableType = "plain"
+    targets = new Listing { "production"; "preview" }
+    comment = "Public API base URL"
+  }
+
+  // A secret. `encrypted` still round-trips through the API, so formae sees no
+  // drift; `sensitive` would be write-only and would report drift on every
+  // sync. Wrapping the value keeps it out of state and logs.
+  //
+  // To have formae generate the secret instead of reading it from the
+  // environment, import "@formae/ext/random.pkl" and use:
+  //   value = formae.value(random.password(32, false)).opaque.setOnce
+  // That form only evaluates under the formae agent — bare `pkl eval` refuses
+  // the libext: resource it reads — which is why this example uses an env var.
+  new vercel.EnvironmentVariable {
+    label = "session-secret"
+    projectId = site.res.id
+    key = "SESSION_SECRET"
+    value = formae.value(read?("env:SHOP_SESSION_SECRET") ?? "replace-me").opaque.setOnce
+    variableType = "encrypted"
+    targets = new Listing { "production" }
+  }
+
+  // Scoped to one preview branch.
+  new vercel.EnvironmentVariable {
+    label = "debug-flag"
+    projectId = site.res.id
+    key = "DEBUG_MODE"
+    value = "1"
+    variableType = "plain"
+    targets = new Listing { "preview" }
+    gitBranch = "staging/main"
+  }
+
+  // Edge Config's current API name. `slug` is immutable, so renaming replaces
+  // the store.
+  new vercel.GlobalConfig {
+    label = "feature-store"
+    slug = "shop_features"
+  }
+
+  // Notified on deployment outcomes for this project only.
+  new vercel.Webhook {
+    label = "deploy-webhook"
+    url = "https://hooks.example.com/vercel"
+    events = new Listing { "deployment.succeeded"; "deployment.error" }
+    projectIds = new Listing { site.res.id }
+  }
+}
