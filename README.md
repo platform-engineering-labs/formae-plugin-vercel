@@ -14,18 +14,45 @@ Installs the binary, schema and manifest to `~/.pel/formae/plugins/vercel/v<vers
 
 ## Supported Resources
 
-An initial vertical slice: projects and their environment variables. Both implement
-Create, Read, Update, Delete and List. Every operation is synchronous — nothing polls.
+19 resource types, covering 20 of the official Terraform provider's 50 resources.
+Each implements Create, Read, Update, Delete and List unless noted.
 
-| Resource Type | Description |
-|---------------|-------------|
-| `VERCEL::Projects::Project` | A Vercel project. An empty project (no Git repository, no deployment) is free and provisions instantly. `name` is immutable — changing it replaces the project. |
-| `VERCEL::Projects::EnvironmentVariable` | An environment variable on a project. Reference the project with `project.res.id`. |
+| Resource Type | Notes |
+|---------------|-------|
+| `VERCEL::Projects::Project` | An empty project (no Git repo, no deployment) is free and instant. `name` is immutable — changing it replaces the project. |
+| `VERCEL::Projects::EnvironmentVariable` | Reference the project with `project.res.id`. |
+| `VERCEL::Projects::CustomEnvironment` | Named `slug` on the wire, not `name`. |
+| `VERCEL::Projects::Domain` | Keyed by the domain name. Custom domains need a paid plan. |
+| `VERCEL::DNS::Record` | Record type is `recordType` here — `type` is reserved. |
+| `VERCEL::GlobalConfig::Config` | Edge Config's new API name. `slug` is immutable, so changes replace. |
+| `VERCEL::Webhooks::Webhook` | No update endpoint; any change replaces. |
+| `VERCEL::Networking::Network` | **Asynchronous** — create polls until `status: ready`. |
+| `VERCEL::AccessGroups::AccessGroup` | Update verb is POST; id is `accessGroupId`. |
+| `VERCEL::AccessGroups::ProjectAssignment` | A project's role inside an access group. |
+| `VERCEL::Auth::Token` | The token value is returned once at create and is deliberately not stored as state. |
+| `VERCEL::VCR::Repository` | Container registry repository. No update. |
+| `VERCEL::Certs::Certificate` | Vercel-issued cert for a set of common names. |
+| `VERCEL::Certs::UploadedCertificate` | Your own cert: three PEM blobs, all write-only. |
+| `VERCEL::Deployments::Alias` | Created under a deployment, but read/listed/deleted account-wide. |
+| `VERCEL::Drains::Drain` | One type covers Terraform's log, trace **and** audit-log drains — they are all `POST /v1/drains`, differing only by `schemas` and delivery type. |
+| `VERCEL::FeatureFlags::Flag` | Create verb is PUT. |
+| `VERCEL::FeatureFlags::Segment` | Create verb is PUT. |
+| `VERCEL::FeatureFlags::SDKKey` | Keyed by `hashKey`. No update. |
 
-See [`docs/RESOURCES.md`](docs/RESOURCES.md) for the full catalog of Vercel resource
-types, their endpoints, priorities, and how the implemented ones map to the official
-`vercel/terraform-provider-vercel` schemas. Design notes live in
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Most operations are synchronous. `Networking::Network` is not: create returns
+InProgress and polls until the network is actually usable.
+
+[`docs/RESOURCES.md`](docs/RESOURCES.md) holds the full 50-resource parity matrix
+against `vercel/terraform-provider-vercel`, including what is deliberately out of
+scope and why. Design notes are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+### Scope policy
+
+This plugin uses **only endpoints Vercel publicly documents**. A handful of
+Terraform resources (blob stores, OAuth apps, project crons, integration project
+access) are reachable only through undocumented paths, so they are out of scope
+and 1:1 parity is not attainable. The won't-fix table in `docs/RESOURCES.md` names
+each one and the path Terraform uses.
 
 ## Credentials
 
