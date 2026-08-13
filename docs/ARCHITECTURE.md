@@ -123,11 +123,30 @@ converge after an out-of-band deletion.
 
 ## Sync vs async
 
-Every P1 operation is synchronous: `POST`/`PATCH`/`DELETE` return the final state in one
-round-trip. `Status()` is therefore implemented as an immediate `Success` and no operation
-ever returns `InProgress`. If deployments (P3) are added later, that is the resource type
-that will need real polling — `GET /v13/deployments/{id}` exposes a `readyState` field for
-exactly that.
+Most Vercel operations are synchronous: `POST`/`PATCH`/`DELETE` return the final
+state in one round-trip, so `Status()` reports Success immediately.
+
+Some are not. A Secure Compute network reports `status: create_in_progress` and
+only later becomes `ready`. A Definition declares that with an `AsyncSpec`:
+
+```go
+Async: &rest.AsyncSpec{
+    StatusField: "status",
+    Pending:     []string{"create_in_progress", "delete_in_progress"},
+    Failed:      []string{"error"},
+    Ready:       []string{"ready"},
+}
+```
+
+Create and Update then return `InProgress` with a `RequestID`, and `Status()`
+re-reads the resource until it settles. Two deliberate choices: a create
+response *missing* the status field is polled rather than assumed ready, and a
+status value nobody enumerated is reported `InProgress` rather than Success —
+reporting success for a state we do not understand is the failure mode that
+breaks everything downstream.
+
+Deployments (still unimplemented) would need the same treatment plus file
+upload.
 
 ## Discovery
 

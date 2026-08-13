@@ -114,7 +114,7 @@ config = new vercel.Config {
 The goal is 1:1 coverage of `vercel/terraform-provider-vercel`. Status counted
 2026-08-13.
 
-**Implemented: 14 / 50.**
+**Implemented: 17 / 50 Terraform resources** (18 formae types — `VERCEL::Certs::Certificate` wraps the *issue* flow, which Terraform has no equivalent for).
 
 Legend — **done**: implemented and unit-tested · **engine**: fits
 `pkg/resources/rest`, needs its API request body confirmed and then declared ·
@@ -188,17 +188,59 @@ REST API this plugin talks to.
   a bag, a singleton, a toggle, or a verb pair rather than CRUD on an id.
 - **2 blocked** (#50, #51): need async `Status()` polling and file upload.
 
-### Engine capabilities still missing
+### Engine capabilities — now implemented
 
-Closing the list above also needs these, none of which exist yet:
+All five gaps previously listed here, plus two more found while implementing,
+are done and live in `pkg/resources/rest`:
 
-1. **Async create with `Status()` polling** — for `Network` (already shipped and
-   currently reporting success too early) and `Deployment`.
-2. **Singleton child resources** — no id; the native id is just the parent.
-3. **Bag resources** — one batch write for a whole keyed set.
-4. **Verb-pair resources** — link/unlink, connect/disconnect, generate/revoke.
-5. **Bulk delete taking a request body.**
+| Capability | Definition field | Notes |
+|---|---|---|
+| Async create with `Status()` polling | `Async *AsyncSpec{StatusField, Pending, Failed, Ready}` | Unknown status values report `InProgress`, never Success; a missing status field is polled, not assumed ready |
+| Singleton child resources | `Singleton bool` | Native id is the parent alone; account-scoped singletons are rejected as a definition bug |
+| Bag resources | `Bag *BagSpec{…}` | One keyed set, one atomic write; removals computed against live state so out-of-band additions are cleaned up; keys sorted for byte-stable requests |
+| Verb-pair resources | `CreateIDFromProperty` + `DeleteMethod` + `DeleteBody` | Composed from scalars rather than one struct |
+| Bulk delete with a body | `DeleteBody map[string]any` | `{id}`/`{parent}` substituted through nested objects and slices; nil sends no body |
+| Request-body wrapper | `Wrap string`, `WrapExclude []string` | Mirror of `Unwrap`, request side only — for endpoints whose writes nest fields but whose reads return them flat |
+| Native id from a desired property | `CreateIDFromProperty string` | For endpoints whose create response returns the *parent's* id |
 
+Known limits: `Async` is not wired into bag writes (no known Vercel bag is
+async); `DeleteBody` can reference only `{id}` and `{parent}`, since the SDK's
+`DeleteRequest` carries no properties; bags model the set as a JSON object only.
+
+### Won't fix — endpoint not publicly documented
+
+Policy: **this plugin uses only endpoints Vercel publicly documents.** The
+resources below are supported by the official Terraform provider, but only via
+paths that appear in neither Vercel's REST reference nor its machine-readable
+spec (275 paths, checked directly). They are out of scope, and 1:1 parity with
+Terraform is therefore not reachable without reversing this decision.
+
+| Terraform resource | Path Terraform uses | Why it is out |
+|---|---|---|
+| `vercel_blob_store` | `GET /v1/storage/stores`, `PUT /v1/storage/stores/blob/{id}` | Undocumented. The three *documented* storage endpoints are unusable alone: the create response declares no `id`, `GET /storage/stores/{id}` returns none of the managed fields (full drift every sync), and there is no list endpoint. |
+| `vercel_oauth_app` | `POST/GET/PATCH/DELETE /v1/oauth-apps` | Undocumented. Vercel documents only the CLI (`vercel oauth-apps …`), no HTTP paths. The feature exists — the webhooks endpoint accepts `oauth-app-created` — but an existing feature is not a documented endpoint. |
+| `vercel_oauth_app_client_secret` | `POST/DELETE /v1/oauth-apps/{clientId}/secret` | Undocumented; keyed by the secret's last four characters. |
+| `vercel_project_crons` | `PATCH /v1/projects/{projectId}/crons` | Undocumented. `crons` appears only as a read-only sub-object of the project payload; `PATCH /v9/projects/{id}` has no crons field among its 44 body properties. Also a singleton toggle. |
+| `vercel_integration_project_access` | `POST /v1/integrations/configuration/{integrationId}/project/{projectId}` | Undocumented, and a boolean toggle rather than a resource. The *documented* connections endpoint is a different thing: its 201 has no response body schema and it has no GET/PATCH/DELETE, so create cannot produce a native id and nothing reads back. |
+
+### Still open, and now expressible
+
+| Terraform resource | State |
+|---|---|
+| `vercel_project_route` | Unblocked by `Wrap` + collection-path `DeleteBody`. Not yet declared. |
+| `vercel_project_members` | Unblocked by `CreateIDFromProperty` — its POST answers with the *project* id, not the member's uid. Not yet declared. |
+| `vercel_feature_flag_config` | Per-project singleton (`.../feature-flags/settings`). Expressible via `Singleton`. Not yet declared. |
+| `vercel_deployment_protection_exception` | Documented but **alias**-scoped, not project-scoped (`PATCH /aliases/{id}/protection-bypass`, `action: create\|revoke`). A verb pair; needs re-modelling away from Terraform's misleading `project_id`. |
+| `vercel_team_member` | Blocked differently: the team id is target config, and path templating reaches only `{parent}`, `{id}` and `{prop:…}`. Needs a `{team}` placeholder fed from `registry.TargetConfig`, changing `rest.New`'s signature. Modelling team as a resource property is *wrong* — it duplicates target config into resource state and makes discovery report members of teams the target is not scoped to. |
+| The remaining bags, singletons and verb pairs (#30–#49) | All now expressible; none declared yet. |
+| `vercel_deployment` | Still blocked: needs file upload (`POST /v2/files`) on top of async polling. |
+| `vercel_blob_object` | Still blocked: not served by `api.vercel.com` at all. |
+
+### Known engine limitation
+
+`rest.fetchList` does not follow `pagination.next` cursors, so discovery of
+collections that paginate (feature flags, segments) sees the first page only.
+Project listing does page correctly, via `prov.ProjectIDs`.
 
 ## Resource catalog
 
