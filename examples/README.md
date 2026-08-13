@@ -16,12 +16,17 @@ formae apply --mode reconcile --watch examples/basic/main.pkl
 | [`dns/`](dns/) | A domain attached to a project, an apex redirect, and A / MX / TXT records | Custom domains need a paid plan — Hobby answers `custom_domain_needs_upgrade` |
 | [`drains/`](drains/) | Log and trace drains — one formae type covering what Terraform splits into three resources | Drains are billed per GB delivered |
 
-All of them evaluate offline with `pkl eval`, so you can check a change before
-applying it:
+All of them evaluate offline with `pkl eval`, and all pass a live
+`--simulate` against a running agent:
 
 ```bash
-cd examples/dns && pkl project resolve && pkl eval main.pkl
+cd examples/dns && pkl project resolve && pkl eval main.pkl        # offline
+formae apply --mode reconcile --simulate --yes examples/dns/main.pkl  # agent
 ```
+
+`pkl eval` only proves the forma renders. Simulate is what proves formae will
+accept it — it caught three defects these examples would otherwise have shipped
+with (an empty stack, an apex DNS record, and unset optional drain blocks).
 
 ## Notes that catch people out
 
@@ -36,3 +41,9 @@ cd examples/dns && pkl project resolve && pkl eval main.pkl
 - **`formae.value(...).opaque.setOnce`** keeps a secret out of state and logs.
   The `random.password` generator shown in `full-stack/` only resolves under the
   formae agent — bare `pkl eval` refuses the resource it reads.
+- **A stack needs at least one resource.** `discover/` therefore declares a
+  target and no stack; discovered resources land on the built-in `unmanaged`
+  stack.
+- **An apex DNS record is `name = ""`.** formae's required-field check treats an
+  empty string as missing, so `DNSRecord.name` is deliberately not marked
+  `requiredOnCreate`.
