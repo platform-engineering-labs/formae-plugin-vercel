@@ -76,11 +76,21 @@ type Definition struct {
 
 	// IDField is the response field holding the resource id. Defaults to "id".
 	IDField string
+	// CreateIDField overrides IDField for the create response only. Vercel is
+	// not always consistent: creating a DNS record answers with `uid` while
+	// listing records returns `id`.
+	CreateIDField string
 
-	// Fields are the managed property names, in API spelling. Read returns
-	// only these (plus the id and parent), so unmanaged server-side fields
-	// never surface as drift.
+	// Fields are the managed property names as they appear in the PKL schema.
+	// Read returns only these (plus the id and parent), so unmanaged
+	// server-side fields never surface as drift.
 	Fields []string
+
+	// Rename maps a PKL property name to its API field name, for the cases
+	// where they cannot match. formae.Resource reserves `type`, `target`,
+	// `label`, `group` and `stack`, and Vercel uses some of those names, so a
+	// rename is the only way to model e.g. a DNS record's `type`.
+	Rename map[string]string
 
 	// CreateOnly are fields sent on create but never on update.
 	CreateOnly []string
@@ -120,6 +130,13 @@ func (d Definition) idField() string {
 	return "id"
 }
 
+func (d Definition) createIDField() string {
+	if d.CreateIDField != "" {
+		return d.CreateIDField
+	}
+	return d.idField()
+}
+
 func (d Definition) itemPathFor(op string) string {
 	switch op {
 	case "update":
@@ -132,6 +149,14 @@ func (d Definition) itemPathFor(op string) string {
 		}
 	}
 	return d.ItemPath
+}
+
+// apiName returns the wire name for a PKL property.
+func (d Definition) apiName(field string) string {
+	if api, ok := d.Rename[field]; ok {
+		return api
+	}
+	return field
 }
 
 // isCreateOnly reports whether a field must not be sent on update.

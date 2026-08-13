@@ -378,3 +378,40 @@ func TestCreate_CustomIDField(t *testing.T) {
 		t.Errorf("NativeID = %q", res.ProgressResult.NativeID)
 	}
 }
+
+// PKL reserves `type`, so a DNS record's type has to be declared under another
+// name and renamed on the wire in both directions.
+func TestRename_BothDirections(t *testing.T) {
+	def := drainDef()
+	def.Fields = []string{"recordType", "name"}
+	def.Rename = map[string]string{"recordType": "type"}
+	def.CreateOnly = nil
+
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["type"] != "A" {
+				t.Errorf("wire body should use the API name: %v", body)
+			}
+			if _, leaked := body["recordType"]; leaked {
+				t.Error("PKL name leaked onto the wire")
+			}
+		}
+		_, _ = io.WriteString(w, `{"id":"rec_1","type":"A","name":"www"}`)
+	})
+	p := New(def, c, "")
+	props, _ := json.Marshal(map[string]any{"recordType": "A", "name": "www"})
+	res, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var got map[string]any
+	_ = json.Unmarshal(res.ProgressResult.ResourceProperties, &got)
+	if got["recordType"] != "A" {
+		t.Errorf("response should map back to the PKL name: %v", got)
+	}
+	if _, leaked := got["type"]; leaked {
+		t.Error("API name leaked into the property document")
+	}
+}

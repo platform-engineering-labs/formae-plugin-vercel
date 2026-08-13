@@ -74,7 +74,7 @@ func (r *Resource) body(p props, forUpdate bool) map[string]any {
 			continue
 		}
 		if v, ok := p[field]; ok {
-			out[field] = v
+			out[r.def.apiName(field)] = v
 		}
 	}
 	return out
@@ -86,7 +86,7 @@ func (r *Resource) body(p props, forUpdate bool) map[string]any {
 func (r *Resource) toProperties(raw props, parent string) props {
 	out := make(props, len(r.def.Fields)+2)
 	for _, field := range r.def.Fields {
-		if v, ok := raw[field]; ok {
+		if v, ok := raw[r.def.apiName(field)]; ok {
 			out[field] = v
 		}
 	}
@@ -100,7 +100,11 @@ func (r *Resource) toProperties(raw props, parent string) props {
 }
 
 func (r *Resource) idOf(raw props) string {
-	v, ok := raw[r.def.idField()]
+	return stringField(raw, r.def.idField())
+}
+
+func stringField(raw props, field string) string {
+	v, ok := raw[field]
 	if !ok {
 		return ""
 	}
@@ -139,10 +143,10 @@ func (r *Resource) Create(ctx context.Context, req *resource.CreateRequest) (*re
 	if err != nil {
 		return prov.FailCreate(vercelapi.ClassifyError(err), err.Error()), nil
 	}
-	id := r.idOf(created)
+	id := stringField(created, r.def.createIDField())
 	if id == "" {
 		return prov.FailCreate(resource.OperationErrorCodeServiceInternalError,
-			fmt.Sprintf("create response missing %q", r.def.idField())), nil
+			fmt.Sprintf("create response missing %q", r.def.createIDField())), nil
 	}
 	return prov.SuccessCreate(r.joinNativeID(parent, id), r.toProperties(created, parent)), nil
 }
@@ -305,16 +309,28 @@ func fetchList(ctx context.Context, c *vercelapi.Client, p, field string, query 
 		}
 		return items, nil
 	}
-	if field == "" {
-		return nil, fmt.Errorf("expected a JSON array from %s", p)
-	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &envelope); err != nil {
 		return nil, err
 	}
 	inner, ok := envelope[field]
 	if !ok {
-		return nil, nil
+		// Several Vercel collection endpoints are documented only as "an
+		// object"; fall back to the sole array-valued key rather than making
+		// the caller guess it. Ambiguity is an error, not a coin flip.
+		var found string
+		for k, v := range envelope {
+			if len(bytes.TrimSpace(v)) > 0 && bytes.TrimSpace(v)[0] == '[' {
+				if found != "" {
+					return nil, fmt.Errorf("%s: several array fields (%s, %s), set ListField", p, found, k)
+				}
+				found = k
+			}
+		}
+		if found == "" {
+			return nil, nil
+		}
+		inner = envelope[found]
 	}
 	var items []props
 	if err := json.Unmarshal(inner, &items); err != nil {

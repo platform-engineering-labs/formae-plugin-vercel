@@ -213,3 +213,251 @@ class EnvironmentVariable extends formae.Resource {
     @formae.FieldHint {}
     comment: String? = null
 }
+
+// =============================================================================
+// VERCEL::Projects::CustomEnvironment
+// =============================================================================
+
+/// How a custom environment picks up git branches.
+@formae.SubResourceHint {}
+class BranchMatcher extends formae.SubResource {
+    /// One of "equals", "startsWith", "endsWith".
+    @formae.FieldHint {}
+    type: "equals"|"startsWith"|"endsWith"
+
+    /// Git branch name, or the portion of it to match.
+    @formae.FieldHint {}
+    pattern: String
+}
+
+/// A custom deployment environment on a project.
+/// Maps to `POST /v9/projects/{idOrName}/custom-environments`.
+///
+/// Note the wire name is `slug`, not `name`, and it cannot be "production" or
+/// "preview".
+@formae.ResourceHint {
+    type = "VERCEL::Projects::CustomEnvironment"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class CustomEnvironment extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Projects::CustomEnvironment"
+
+    /// Owning project id or name. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// URL-friendly environment name, max 32 characters. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    slug: String
+
+    /// Optional description, max 256 characters.
+    @formae.FieldHint {}
+    description: String? = null
+
+    /// Optional branch-matching rule for automatic deployments.
+    @formae.FieldHint {}
+    branchMatcher: BranchMatcher? = null
+
+    /// Environment to seed environment variables from, applied only at
+    /// creation time.
+    @formae.FieldHint { createOnly = true }
+    copyEnvVarsFrom: String? = null
+}
+
+// =============================================================================
+// VERCEL::Projects::Domain
+// =============================================================================
+
+/// A domain attached to a project.
+/// Maps to `POST /v10/projects/{idOrName}/domains`.
+///
+/// Keyed by the domain name itself. Adding a custom domain requires a paid
+/// plan; on Hobby the API answers `custom_domain_needs_upgrade`.
+@formae.ResourceHint {
+    type = "VERCEL::Projects::Domain"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class ProjectDomain extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Projects::Domain"
+
+    /// Owning project id or name. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// The domain name. Immutable — it is the resource's identity.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    name: String
+
+    /// Git branch to bind the domain to. Mutually exclusive with `redirect`.
+    @formae.FieldHint {}
+    gitBranch: String? = null
+
+    /// Custom environment to bind the domain to.
+    @formae.FieldHint {}
+    customEnvironmentId: String? = null
+
+    /// Redirect target domain. Mutually exclusive with `gitBranch`.
+    @formae.FieldHint {}
+    redirect: String? = null
+
+    /// HTTP status used for the redirect.
+    @formae.FieldHint {}
+    redirectStatusCode: Int(this == 301 || this == 302 || this == 307 || this == 308)? = null
+}
+
+// =============================================================================
+// VERCEL::DNS::Record
+// =============================================================================
+
+/// SRV record payload.
+@formae.SubResourceHint {}
+class SRVRecord extends formae.SubResource {
+    @formae.FieldHint {}
+    priority: Int
+
+    @formae.FieldHint {}
+    weight: Int
+
+    @formae.FieldHint {}
+    port: Int
+
+    @formae.FieldHint {}
+    target: String
+}
+
+/// A DNS record on a domain Vercel manages.
+/// Maps to `POST /v2/domains/{domain}/records`.
+///
+/// The API spells the record type `type`, which `formae.Resource` reserves, so
+/// it is declared here as `recordType` and renamed on the wire.
+@formae.ResourceHint {
+    type = "VERCEL::DNS::Record"
+    identifier = "$.id"
+    discoverable = true
+}
+class DNSRecord extends formae.Resource {
+    fixed hidden type: String = "VERCEL::DNS::Record"
+
+    /// Domain the record belongs to. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    domain: String
+
+    /// Subdomain, or an empty string for the apex. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    name: String
+
+    /// Record type. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    recordType: "A"|"AAAA"|"ALIAS"|"CAA"|"CNAME"|"HTTPS"|"MX"|"NS"|"SRV"|"TXT"
+
+    /// Record value. Required for every type except SRV, which uses `srv`.
+    @formae.FieldHint {}
+    value: String? = null
+
+    /// Time to live in seconds, 60 to 2147483647.
+    @formae.FieldHint {}
+    ttl: Int? = null
+
+    /// Priority, for MX records.
+    @formae.FieldHint {}
+    mxPriority: Int? = null
+
+    /// SRV payload, for SRV records.
+    @formae.FieldHint {}
+    srv: SRVRecord? = null
+
+    /// Free-text note, max 500 characters.
+    @formae.FieldHint {}
+    comment: String? = null
+}
+
+// =============================================================================
+// VERCEL::GlobalConfig::Config
+// =============================================================================
+
+/// A Global Config store (the API's new name for Edge Config).
+/// Maps to `POST /v1/global-config`.
+///
+/// Only `slug` is durable state and it is immutable, so any change replaces the
+/// store. The items inside it are not modelled: the API writes the whole set in
+/// one batch PATCH, and writes are billed per thousand.
+@formae.ResourceHint {
+    type = "VERCEL::GlobalConfig::Config"
+    identifier = "$.id"
+    discoverable = true
+}
+class GlobalConfig extends formae.Resource {
+    fixed hidden type: String = "VERCEL::GlobalConfig::Config"
+
+    /// Store name. Word characters only, max 64. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    slug: String
+}
+
+// =============================================================================
+// VERCEL::Webhooks::Webhook
+// =============================================================================
+
+/// An account or team webhook. Maps to `POST /v1/webhooks`.
+///
+/// The API has no update endpoint, so every field is immutable and any change
+/// replaces the webhook. The signing secret is returned only on creation.
+@formae.ResourceHint {
+    type = "VERCEL::Webhooks::Webhook"
+    identifier = "$.id"
+    discoverable = true
+}
+class Webhook extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Webhooks::Webhook"
+
+    /// Destination URL. Must be http(s). Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    url: String
+
+    /// Events to subscribe to, e.g. "deployment.succeeded", "project.created".
+    /// Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true; updateMethod = "Set" }
+    events: Listing<String>
+
+    /// Restrict the webhook to specific projects. Immutable.
+    @formae.FieldHint { createOnly = true; updateMethod = "Set" }
+    projectIds: Listing<String>?
+}
+
+// =============================================================================
+// VERCEL::Networking::Network
+// =============================================================================
+
+/// A Secure Compute network. Maps to `POST /v1/connect/networks`.
+///
+/// Caveat: creation is asynchronous — the network reports
+/// `create_in_progress` before it becomes `ready`, and the plugin currently
+/// returns success as soon as the API accepts the request.
+@formae.ResourceHint {
+    type = "VERCEL::Networking::Network"
+    identifier = "$.id"
+    discoverable = true
+}
+class Network extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Networking::Network"
+
+    /// Network name, max 255 characters.
+    @formae.FieldHint { requiredOnCreate = true }
+    name: String
+
+    /// CIDR block of the network. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    cidr: String
+
+    /// Vercel region the network lives in. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    region: String
+
+    /// AWS availability zone ids to pin the network to. Immutable.
+    @formae.FieldHint { createOnly = true; updateMethod = "Set" }
+    awsAvailabilityZoneIds: Listing<String>?
+}

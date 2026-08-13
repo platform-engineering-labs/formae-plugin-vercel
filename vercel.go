@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	// Side-effect import: registers the VERCEL::Projects::* resource types.
+	_ "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/defs"
 	_ "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/projects"
 
 	"github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/prov"
@@ -65,6 +66,9 @@ func (p *Plugin) LabelConfig() model.LabelConfig {
 		DefaultQuery: "$.name",
 		ResourceOverrides: map[string]string{
 			"VERCEL::Projects::EnvironmentVariable": "$.key",
+			"VERCEL::Projects::CustomEnvironment":   "$.slug",
+			"VERCEL::GlobalConfig::Config":          "$.slug",
+			"VERCEL::Webhooks::Webhook":             "$.url",
 		},
 	}
 }
