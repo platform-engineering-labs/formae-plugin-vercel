@@ -347,7 +347,11 @@ class DNSRecord extends formae.Resource {
     domain: String
 
     /// Subdomain, or an empty string for the apex. Immutable.
-    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    ///
+    /// Not marked `requiredOnCreate`: an apex record is `name = ""`, and
+    /// formae's required-field check treats an empty string as absent. The
+    /// field is still non-nullable with no default, so PKL makes you write it.
+    @formae.FieldHint { createOnly = true }
     name: String
 
     /// Record type. Immutable.

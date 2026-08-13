@@ -17,12 +17,10 @@ amends "@formae/forma.pkl"
 import "@formae/formae.pkl"
 import "@vercel/core/vercel.pkl"
 
+// No Stack here on purpose: formae rejects a stack with no resources
+// ("creating empty stacks is not allowed"). A target on its own is enough for
+// discovery — discovered resources land on the built-in "unmanaged" stack.
 forma {
-  new formae.Stack {
-    label = "default"
-    description = "Discovery only — declares no resources"
-  }
-
   new formae.Target {
     label = "vercel"
     config = new vercel.Config {

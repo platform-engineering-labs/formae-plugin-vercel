@@ -165,11 +165,11 @@ class DrainSchema extends formae.SubResource {
 class DrainSampling extends formae.SubResource {
     /// Sampling strategy. Only head sampling is supported. Sent to the API as
     /// `type`.
-    @formae.FieldHint { requiredOnCreate = true; outputField = "type" }
+    @formae.FieldHint { outputField = "type" }
     strategy: "head_sampling"
 
     /// Fraction of matching events to keep, from 0 to 1 — `0.1` keeps 10%.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     rate: Float
 
     /// Restrict the rule to one deployment environment. Applies to every
@@ -216,7 +216,7 @@ class DrainDeploymentFilter extends formae.SubResource {
 @formae.SubResourceHint {}
 class DrainFilterSpec extends formae.SubResource {
     /// Which of the two filter forms this is. Sent to the API as `type`.
-    @formae.FieldHint { requiredOnCreate = true; outputField = "type" }
+    @formae.FieldHint { outputField = "type" }
     kind: "basic"|"odata"
 
     /// `basic` only. Restrict to specific projects.
@@ -240,11 +240,11 @@ class DrainFilterSpec extends formae.SubResource {
 @formae.SubResourceHint {}
 class DrainFilter extends formae.SubResource {
     /// Filter grammar version. Currently `v2`.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     version: String
 
     /// The filter itself.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     filter: DrainFilterSpec
 }
 
@@ -259,7 +259,7 @@ class DrainSource extends formae.SubResource {
     /// `self-served` for drains created with an access token — which is every
     /// drain formae creates. `integration` drains are owned by an installed
     /// integration and are not managed here.
-    @formae.FieldHint { requiredOnCreate = true }
+    @formae.FieldHint {}
     kind: "self-served"|"integration"
 }
 
@@ -341,10 +341,10 @@ class Drain extends formae.Resource {
     /// create and update but reports it back as `filterV2`, so it cannot be
     /// round-tripped and is excluded from drift detection.
     @formae.FieldHint { writeOnly = true }
-    filter: DrainFilter?
+    filter: DrainFilter? = null
 
     /// Provenance of the drain. Immutable, and `self-served` for anything
     /// formae creates.
     @formae.FieldHint { createOnly = true; writeOnly = true }
-    source: DrainSource?
+    source: DrainSource? = null
 }
