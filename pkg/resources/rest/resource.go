@@ -487,27 +487,6 @@ func (r *Resource) Status(ctx context.Context, req *resource.StatusRequest) (*re
 }
 
 func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
-	// Listed account-wide, with each item naming its own parent — used where a
-	// resource is addressed per-parent but enumerated globally. A VCR
-	// repository listing returns every repository with its projectId attached,
-	// so there is no parent collection to walk and parents() must not be
-	// consulted at all.
-	if r.def.ParentFromField != "" {
-		items, err := r.collection(ctx, "")
-		if err != nil {
-			return &resource.ListResult{NativeIDs: []string{}}, nil
-		}
-		nativeIDs := []string{}
-		for _, item := range items {
-			id := r.idOf(item)
-			itemParent := stringField(item, r.def.ParentFromField)
-			if id != "" && itemParent != "" {
-				nativeIDs = append(nativeIDs, r.joinNativeID(itemParent, id))
-			}
-		}
-		return &resource.ListResult{NativeIDs: nativeIDs}, nil
-	}
-
 	parents, err := r.parents(ctx)
 	if err != nil {
 		// A single resource type the token cannot read must not abort
@@ -586,7 +565,23 @@ func (r *Resource) parentCollection(ctx context.Context) ([]string, error) {
 
 func (r *Resource) collection(ctx context.Context, parent string) ([]props, error) {
 	p, _ := r.def.listPath()
-	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.def.Query)
+	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.listQuery(parent))
+}
+
+// listQuery is Query plus any ListQuery parameters resolved against the parent
+// being listed under.
+func (r *Resource) listQuery(parent string) map[string]string {
+	if len(r.def.ListQuery) == 0 {
+		return r.def.Query
+	}
+	merged := make(map[string]string, len(r.def.Query)+len(r.def.ListQuery))
+	for k, v := range r.def.Query {
+		merged[k] = v
+	}
+	for k, v := range r.def.ListQuery {
+		merged[k] = path(v, parent, "")
+	}
+	return merged
 }
 
 // readCollection is what Read scans. A parent-scoped ListPath is the right
@@ -598,7 +593,7 @@ func (r *Resource) readCollection(ctx context.Context, parent string) ([]props, 
 	if flat {
 		p = r.def.CollectionPath
 	}
-	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.def.Query)
+	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.listQuery(parent))
 }
 
 // fetchList GETs a collection and normalises the two shapes Vercel uses: a

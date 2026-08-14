@@ -1025,23 +1025,22 @@ func TestBody_StripsNullsFromNestedPayloads(t *testing.T) {
 }
 
 // A VCR repository is created with its project in the body, addressed by a
-// bare id, deleted with ?projectId=, and listed account-wide with each item
-// naming its own project. All four at once.
+// bare id, and both read and listed with ?projectId=. All of it at once.
 func vcrDef() Definition {
 	return Definition{
-		Type:            "VERCEL::VCR::Repository",
-		Scope:           ScopeParent,
-		ParentProperty:  "projectId",
-		ParentInBody:    true,
-		ParentFromField: "projectId",
-		CollectionPath:  "/v1/vcr/repository",
-		ItemPath:        "/v1/vcr/repository/{id}",
-		ItemQuery:       map[string]string{"projectId": "{parent}"},
-		Unwrap:          "repository",
-		ListField:       "repositories",
-		Fields:          []string{"name"},
-		CreateOnly:      []string{"name"},
-		NoUpdate:        true,
+		Type:           "VERCEL::VCR::Repository",
+		Scope:          ScopeProject,
+		ParentProperty: "projectId",
+		ParentInBody:   true,
+		CollectionPath: "/v1/vcr/repository",
+		ItemPath:       "/v1/vcr/repository/{id}",
+		ItemQuery:      map[string]string{"projectId": "{parent}"},
+		ListQuery:      map[string]string{"projectId": "{parent}"},
+		Unwrap:         "repository",
+		ListField:      "repositories",
+		Fields:         []string{"name"},
+		CreateOnly:     []string{"name"},
+		NoUpdate:       true,
 	}
 }
 
@@ -1091,23 +1090,55 @@ func TestItemQuery_SendsParentAsQueryParam(t *testing.T) {
 	}
 }
 
-func TestParentFromField_ListsFlatAndRecoversParent(t *testing.T) {
+// Regression: this resource used to be listed account-wide, recovering each
+// item's project from a field in the response. There is no account-wide list —
+// GET /v1/vcr/repository without ?projectId= answers 400, which discovery
+// reported as "0 resources", and the conformance discovery test sat waiting
+// for a repository it had just created until it timed out. Listing walks
+// projects and asks per project.
+func TestListQuery_TemplatesParentPerProject(t *testing.T) {
+	var asked []string
 	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/vcr/repository" {
-			t.Errorf("List should be a single flat pass, got %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/v10/projects":
+			_, _ = io.WriteString(w, `{"projects":[{"id":"prj_1"},{"id":"prj_2"}],"pagination":{"count":2,"next":null}}`)
+		case "/v1/vcr/repository":
+			q := r.URL.Query().Get("projectId")
+			asked = append(asked, q)
+			_, _ = io.WriteString(w, `{"repositories":[{"id":"repo_of_`+q+`"}]}`)
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
 		}
-		_, _ = io.WriteString(w, `{"repositories":[
-			{"id":"repo_1","projectId":"prj_1"},
-			{"id":"repo_2","projectId":"prj_2"}]}`)
 	})
 	p := New(vcrDef(), c, "")
 	res, err := p.List(context.Background(), &resource.ListRequest{})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	want := []string{"prj_1/repo_1", "prj_2/repo_2"}
+	if len(asked) != 2 || asked[0] != "prj_1" || asked[1] != "prj_2" {
+		t.Errorf("projectId asked per project = %v, want [prj_1 prj_2]", asked)
+	}
+	want := []string{"prj_1/repo_of_prj_1", "prj_2/repo_of_prj_2"}
 	if len(res.NativeIDs) != 2 || res.NativeIDs[0] != want[0] || res.NativeIDs[1] != want[1] {
 		t.Errorf("NativeIDs = %v, want %v", res.NativeIDs, want)
+	}
+}
+
+// ListQuery is templated against a parent that only List knows. It must not
+// leak into writes, where the placeholder would go out unsubstituted.
+func TestListQuery_DoesNotLeakIntoCreate(t *testing.T) {
+	var gotQuery string
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("projectId")
+		_, _ = io.WriteString(w, `{"repository":{"id":"repo_1","name":"api","projectId":"prj_1"}}`)
+	})
+	p := New(vcrDef(), c, "")
+	props, _ := json.Marshal(map[string]any{"projectId": "prj_1", "name": "api"})
+	if _, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if gotQuery != "" {
+		t.Errorf("create sent projectId=%q as a query parameter; ListQuery is for List only", gotQuery)
 	}
 }
 
