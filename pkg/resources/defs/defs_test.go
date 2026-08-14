@@ -84,14 +84,15 @@ func TestDefinitionsAreWellFormed(t *testing.T) {
 			if def.ParentProperty == "" {
 				t.Errorf("%s: scoped but no ParentProperty", def.Type)
 			}
-			// A parent-from-field resource is listed account-wide, so its
-			// collection path carries no parent segment by design.
-			if def.ParentFromField == "" && !strings.Contains(def.CollectionPath, "{parent}") {
-				t.Errorf("%s: scoped but CollectionPath has no {parent}", def.Type)
+			// The parent normally comes from the path; a resource whose
+			// collection is selected by a query parameter instead must say so
+			// in ListQuery, or discovery lists the wrong thing — or nothing.
+			if !strings.Contains(def.CollectionPath, "{parent}") && !queryTemplatesParent(def.ListQuery) {
+				t.Errorf("%s: scoped but neither CollectionPath nor ListQuery carries the parent", def.Type)
 			}
 		}
-		if def.Scope == rest.ScopeParent && def.ParentListPath == "" && def.ParentFromField == "" {
-			t.Errorf("%s: parent-scoped but neither ParentListPath nor ParentFromField — discovery cannot enumerate", def.Type)
+		if def.Scope == rest.ScopeParent && def.ParentListPath == "" {
+			t.Errorf("%s: parent-scoped but no ParentListPath — discovery cannot enumerate", def.Type)
 		}
 
 		// Every createOnly field must actually be a declared field, or the
@@ -121,6 +122,15 @@ func allCreateOnly(def rest.Definition) bool {
 		}
 	}
 	return true
+}
+
+func queryTemplatesParent(query map[string]string) bool {
+	for _, v := range query {
+		if strings.Contains(v, "{parent}") {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(haystack []string, needle string) bool {
