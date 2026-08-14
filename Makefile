@@ -107,7 +107,17 @@ clean-environment:
 ## TIMEOUT is a bare number of minutes, not a Go duration: TIMEOUT=15, not 15m.
 ## It bounds each individual resource operation; GOTEST_TIMEOUT bounds the run.
 ## Calls clean-environment before and after tests.
-conformance-test: conformance-test-crud conformance-test-discovery
+##
+## Both phases always run, and the exit code is non-zero if either failed.
+## Listing them as prerequisites would stop at the first failure — and since
+## some CRUD fixtures are deliberately kept red (see docs/RESOURCES.md), that
+## meant the discovery phase never ran at all.
+conformance-test:
+	@$(MAKE) conformance-test-crud; crud=$$?; \
+	$(MAKE) conformance-test-discovery; disc=$$?; \
+	if [ $$crud -ne 0 ] || [ $$disc -ne 0 ]; then \
+		echo "conformance: crud=$$crud discovery=$$disc"; exit 1; \
+	fi
 
 # Env shared by both conformance targets. Empty values are left unset so the
 # harness applies its own defaults rather than parsing "".
