@@ -111,8 +111,9 @@ config = new vercel.Config {
 
 ## Parity matrix — all 50 Terraform provider resources
 
-The goal is 1:1 coverage of `vercel/terraform-provider-vercel`. Status counted
-2026-08-13.
+The goal is 1:1 coverage of `vercel/terraform-provider-vercel`. Status
+re-counted against the registered types on 2026-08-14: rows 13 and 18–20 had
+been implemented without their status being updated here.
 
 **Implemented: 20 / 50 Terraform resources**, as 19 formae types.
 
@@ -139,14 +140,14 @@ Legend — **done**: implemented and unit-tested · **engine**: fits
 | 10 | `vercel_access_group_project` | `VERCEL::AccessGroups::ProjectAssignment` | **done** (engine) — keyed by projectId |
 | 11 | `vercel_user_token` | `VERCEL::Auth::Token` | **done** (engine) — `bearerToken` deliberately not modelled; returned once only |
 | 12 | `vercel_vcr_repository` | `VERCEL::VCR::Repository` | **done** (engine) — response unwrapped from `{repository:…}` |
-| 13 | `vercel_custom_certificate` | `VERCEL::Certs::Certificate` | **partial** — the *issue* flow (`POST /v8/certs`, `cns`) is **done**; Terraform's resource wraps the separate `PUT /v8/certs` upload of three PEM blobs, whose body is not yet verified |
+| 13 | `vercel_custom_certificate` | `VERCEL::Certs::UploadedCertificate` | **done** (engine) — `PUT /v8/certs`, three PEM blobs, all createOnly. Discovery is off: `GET /v8/certs` returns issued and uploaded certs in one list and `Certs::Certificate` already discovers it |
 | 14 | `vercel_blob_store` | `VERCEL::Storage::BlobStore` | engine; no documented list endpoint, so discovery may be impossible |
 | 15 | `vercel_alias` | `VERCEL::Deployments::Alias` | **done** (engine) — deployment is a create-time path input, not part of the native id |
 | 16 | `vercel_project_route` | `VERCEL::Projects::Route` | engine; `route` is a nested block and `position` is create-time only |
 | 17 | `vercel_project_members` | `VERCEL::Projects::Member` | engine (id = uid), `NoUpdate` |
-| 18 | `vercel_feature_flag_definition` | `VERCEL::FeatureFlags::Flag` | engine, `CreateMethod: PUT` |
-| 19 | `vercel_feature_flag_segment` | `VERCEL::FeatureFlags::Segment` | engine, `CreateMethod: PUT` |
-| 20 | `vercel_feature_flag_sdk_key` | `VERCEL::FeatureFlags::SDKKey` | engine, `CreateMethod: PUT`, id = hashKey |
+| 18 | `vercel_feature_flag_definition` | `VERCEL::FeatureFlags::Flag` | **done** (engine) — `CreateMethod: PUT` |
+| 19 | `vercel_feature_flag_segment` | `VERCEL::FeatureFlags::Segment` | **done** (engine) — `CreateMethod: PUT` |
+| 20 | `vercel_feature_flag_sdk_key` | `VERCEL::FeatureFlags::SDKKey` | **done** (engine) — `CreateMethod: PUT`, id = hashKey |
 | 21 | `vercel_log_drain` | `VERCEL::Drains::Drain` | **done** (engine) — `schemas {log}`, `delivery.type = http` |
 | 22 | `vercel_trace_drain` | `VERCEL::Drains::Drain` | **done** (engine) — `schemas {trace}`, `delivery.type = otlphttp` |
 | 23 | `vercel_audit_log_drain` | `VERCEL::Drains::Drain` | **done** (engine) — `schemas {audit_log}`, `delivery.type = http` or `s3` |
@@ -184,12 +185,15 @@ REST API this plugin talks to.
 
 ### Remaining work, by kind
 
-- **15 engine-fit** left (#14, #16–#29): each needs its request body confirmed against its
-  own API reference page, then a `rest.Definition` and a PKL class. Seven of
-  them (#21–#26, #28) point at endpoints that are *not* in the public REST
-  reference index and need research before anything can be declared.
-- **19 custom** (#30–#49): each needs hand-written Go, because the API shape is
-  a bag, a singleton, a toggle, or a verb pair rather than CRUD on an id.
+- **12 engine-fit** left (#14, #16, #17, #24–#29): each needs its request body
+  confirmed against its own API reference page, then a `rest.Definition` and a
+  PKL class. Five of them (#14, #24, #25, #26, #29) point at endpoints that are
+  not publicly documented and are won't-fix under the scope policy below, which
+  leaves **7 genuinely declarable** (#16, #17, #27, #28 and the three still-open
+  rows named further down).
+- **20 custom** (#30–#49): each needs hand-written Go, because the API shape is
+  a bag, a singleton, a toggle, or a verb pair rather than CRUD on an id. All are
+  now *expressible* by the engine; none are declared.
 - **2 blocked** (#50, #51): need async `Status()` polling and file upload.
 
 ### Engine capabilities — now implemented
