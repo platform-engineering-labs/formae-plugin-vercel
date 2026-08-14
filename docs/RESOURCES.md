@@ -262,19 +262,27 @@ id without guessing.
 
 ### Conformance coverage
 
-Ten resource types have fixtures. **Six fail, deliberately kept red** — a
+Ten resource types have fixtures. **Five fail, deliberately kept red** — a
 removed test hides a gap, a red one names it. `make conformance-test` therefore
 exits non-zero on this account; that is the intended signal, not a broken build.
 
-Last run 2026-08-13: **5 passed, 5 failed** (CRUD).
+Last run 2026-08-14: **CRUD 5 passed / 5 failed · discovery 5 passed / 5
+failed**. The same five resources fail in both phases, all at Create — a
+resource that cannot be created cannot be discovered either.
+
+This was the **first run in which the discovery phase executed at all**.
+`conformance-test` listed the two phases as make prerequisites, so the
+deliberately-red CRUD phase stopped the run before discovery every time. Both
+phases now always run and the target exits non-zero if either failed. The first
+discovery run found a real defect immediately (VCR, below).
 
 | Fixture | Status | Detail |
 |---|---|---|
-| `project` | ✅ full | Create, Verify, Extract, Sync, Update, Replace, Destroy, OOB delete |
+| `project` | ✅ full | Create, Verify, Extract, Sync, Update, Replace, Destroy, OOB delete + discovery |
 | `envvar` | ✅ full | as above; no Replace (nothing createOnly changes) |
 | `globalconfig` | ✅ full | no Update (the API has none) |
 | `webhook` | ✅ full | no Update (the API has none) |
-| `vcrrepository` | ✅ full | Fixed — see below. No Update (the API has none). |
+| `vcrrepository` | ✅ full | CRUD and discovery both fixed — see below. No Update (the API has none). |
 | `customenv` | ❌ plan | `400 Cannot create more than 0 custom environments` |
 | `drain` | ❌ plan | `403 Drains are not available for team <id>` |
 | `accessgroup` | ❌ token scope | `403 You don't have permission to create the access group` |
@@ -325,10 +333,32 @@ Three engine capabilities closed it, each inert unless declared:
 |---|---|
 | `ItemQuery map[string]string` | Query parameters on every item-path request — Read, Update and Delete — templated with `{id}` and `{parent}` |
 | `ParentInBody bool` | Send the parent property in the create body as well as using it in the native id, for endpoints that take it as a field rather than a path segment |
-| `ParentFromField string` | List in a single flat pass, taking each item's parent from a named response field, for resources enumerated account-wide but addressed per-parent |
+| `ListQuery map[string]string` | Query parameters on collection requests, templated with `{parent}` — for a flat collection path that is nonetheless selected per parent |
+
+`ListQuery` replaced an earlier `ParentFromField`, which listed the repository
+collection account-wide and recovered each item's project from a response
+field. That was wrong: `GET /v1/vcr/repository` requires `?projectId=` exactly
+as the item path does, and answers 400 without it. The repository is now
+`ScopeProject`: listing walks projects and asks each for its own.
+
+That defect survived a green CRUD fixture for one reason worth remembering:
+`List` deliberately swallows errors, because one forbidden resource type must
+not sink discovery for the other eighteen. The 400 therefore surfaced as
+"Received 0 resources", and the discovery test polled for a repository it had
+just created until it timed out. **A silent empty list is indistinguishable
+from an empty account** — which is why the discovery phase, not a unit test,
+is what caught this.
 
 The PKL `ResourceHint` also gained `parent = "VERCEL::Projects::Project"` so
 formae destroys the repository before the project that owns it.
+
+### Flakes seen, not plugin defects
+
+Running the suite repeatedly back to back can exhaust local ports, and the
+harness then fails a fixture with `failed to start agent: timeout waiting for
+agent to become ready after 30s` (preceded by `no available ports in range
+65535..65535`). No Vercel call is involved. `vcrrepository` failed this way in
+one run and passed on its own immediately before and after.
 
 ### Known engine limitation
 
