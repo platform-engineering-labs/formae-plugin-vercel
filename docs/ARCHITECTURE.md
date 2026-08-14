@@ -77,27 +77,61 @@ pkg/
     ├── prov/                   # Provisioner interface + shared helpers
     │   ├── provisioner.go      #   the 6-method contract
     │   ├── nativeid.go         #   composite id join/split
-    │   └── results.go          #   canned Success/Fail result builders
+    │   ├── results.go          #   canned Success/Fail result builders
+    │   └── projects.go         #   paged project-id lookup, shared by both layers
     ├── registry/registry.go    # resourceType -> Factory map, TargetConfig
-    └── projects/               # VERCEL::Projects::* provisioners
+    ├── rest/                   # the generic REST engine
+    │   ├── definition.go       #   Definition: one declarative resource description
+    │   ├── resource.go         #   the CRUD+List engine over a Definition
+    │   ├── async.go            #   AsyncSpec status polling
+    │   ├── singleton.go        #   Singleton child resources (no id of their own)
+    │   └── bag.go              #   BagSpec: one keyed set, one atomic write
+    ├── defs/                   # Definitions, grouped per file, self-registering
+    │   ├── defs.go             #   AddGroup/All + the core group
+    │   ├── teams.go, drains.go, featureflags.go
+    └── projects/               # hand-written VERCEL::Projects::* provisioners
         ├── project.go
         └── envvar.go
 ```
 
-Same shape as `formae-plugin-supabase` and `formae-plugin-k8s`: resource files
-self-register in `init()`, `vercel.go` side-effect-imports the packages and does nothing
-but look up a factory and delegate. Adding a resource type touches exactly one new file.
+`vercel.go` side-effect-imports the resource packages and does nothing but look up a
+factory and delegate — the same shape as `formae-plugin-supabase` and
+`formae-plugin-k8s`.
 
-A configuration-driven registry (the OVH/AWS `ResourceDefinition` + transformers approach)
-is deliberately **not** used here. It pays for itself at 50+ resource types; at two, it is
-pure overhead.
+Two ways in, and the choice is not stylistic:
+
+- **Declarative** (`pkg/resources/defs`) — the default. A resource whose API is plain
+  CRUD on an id is one `rest.Definition` literal plus a PKL class; the engine in
+  `pkg/resources/rest` does the rest. Each file in `defs` contributes a group from its
+  own `init()`, so definitions can be added from several directions without any file
+  editing another.
+- **Hand-written** (`pkg/resources/projects`) — for resources the engine cannot
+  express. `Project` (three API versions across five operations, two list response
+  shapes, paged discovery) and `EnvironmentVariable` (create takes an object *or* an
+  array, its 201 carries a `failed` array, Read has to list-and-filter) are both here.
+
+The declarative path was not the original design — the plugin started with two
+hand-written provisioners on the grounds that a definition-driven registry only pays for
+itself at scale. It reached that scale: `rest.Definition` now backs 17 of the 19 types.
+The engine's capability set (`Async`, `Singleton`, `Bag`, `Wrap`/`Unwrap`, `ItemQuery`,
+`DeleteBody`, `ParentInBody`, `ParentFromField`, `CreateIDFromProperty`) grew one
+capability per resource that needed it, each inert unless a Definition declares it —
+which is what keeps a new capability from changing the behaviour of the resources
+already shipped. `docs/RESOURCES.md` records which remaining Terraform resources fit the
+engine and which still need hand-written Go.
 
 ## Native ID format
+
+Account-scoped resources use the API's own id. Resources that live under a parent use
+`{parentId}/{id}`, joined and split by `prov.NativeID`; a `Singleton` child has no id of
+its own, so its native id is the parent alone.
 
 | Resource | Native ID | Example |
 |----------|-----------|---------|
 | `VERCEL::Projects::Project` | `{projectId}` | `prj_abc123` |
 | `VERCEL::Projects::EnvironmentVariable` | `{projectId}/{envId}` | `prj_abc123/EnvVarId` |
+| `VERCEL::Webhooks::Webhook` | `{webhookId}` | `account_hook_abc123` |
+| `VERCEL::DNS::Record` | `{domain}/{recordId}` | `example.com/rec_abc123` |
 
 Team is *not* part of the native ID: it is target-level configuration, and a resource
 cannot move between teams without being recreated. This matches how the Supabase plugin
