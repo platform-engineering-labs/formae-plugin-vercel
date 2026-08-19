@@ -187,7 +187,8 @@ Conformance parameters:
 
 | Parameter | Meaning |
 |-----------|---------|
-| `TEST` | Filter test cases by name, e.g. `TEST=project` |
+| `TEST` | Filter test cases by name, e.g. `TEST=project`. Comma-separated for several. |
+| `VERSION` | formae version to test against, as a **bare semver** (`VERSION=0.88.1`). Omit it to let the harness choose from the stable channel. `latest` is **not** valid — the harness parses this with semver and every fixture fails in setup. |
 | `TIMEOUT` | Per-operation timeout in **minutes** (bare number, not a Go duration). Harness default is 5. |
 | `PARALLEL` | Max parallel test cases |
 | `TESTDATA_DIR` | Alternate testdata directory |

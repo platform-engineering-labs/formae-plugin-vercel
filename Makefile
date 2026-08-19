@@ -100,6 +100,9 @@ clean-environment:
 ## Usage: make conformance-test [TEST=project] [TIMEOUT=15] [PARALLEL=4] [GOTEST_TIMEOUT=60m]
 ## Parameters:
 ##   TEST           - Filter test cases by name pattern (FORMAE_TEST_FILTER)
+##   VERSION        - formae version to test against, bare semver (FORMAE_VERSION).
+##                    Omit to let the harness use its own default. "latest" is
+##                    NOT valid: the harness parses this with semver.
 ##   TIMEOUT        - Per-operation timeout in MINUTES (FORMAE_TEST_TIMEOUT, harness default 5)
 ##   PARALLEL       - Max parallel test cases (FORMAE_TEST_PARALLEL + go test -parallel)
 ##   TESTDATA_DIR   - Alternate testdata directory (FORMAE_TEST_TESTDATA_DIR)
@@ -121,7 +124,11 @@ conformance-test:
 
 # Env shared by both conformance targets. Empty values are left unset so the
 # harness applies its own defaults rather than parsing "".
+# VERSION must be a bare semver ("0.88.1"). The harness parses it with semver
+# and rejects anything else, including the word "latest" — omit VERSION entirely
+# to let the harness pick its own default from the stable channel.
 CONFORMANCE_ENV = FORMAE_TEST_FILTER="$(TEST)" \
+	$(if $(VERSION),FORMAE_VERSION=$(VERSION),) \
 	$(if $(TIMEOUT),FORMAE_TEST_TIMEOUT=$(TIMEOUT),) \
 	$(if $(PARALLEL),FORMAE_TEST_PARALLEL=$(PARALLEL),) \
 	$(if $(TESTDATA_DIR),FORMAE_TEST_TESTDATA_DIR=$(TESTDATA_DIR),)

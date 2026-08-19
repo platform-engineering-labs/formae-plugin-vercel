@@ -207,7 +207,10 @@ jobs:
           # Isolates this run's resources from any other run's, so a nightly and
           # a manual dispatch cannot clean up each other's projects.
           FORMAE_TEST_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
-          FORMAE_VERSION: ${{ inputs.formae_version || matrix.formae_version }}
+          # Passed through to make as VERSION= only when it is a real semver.
+          # The harness parses FORMAE_VERSION with semver and rejects "latest",
+          # so that value must never reach it.
+          REQUESTED_VERSION: ${{ inputs.formae_version || matrix.formae_version }}
           TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route' }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
@@ -215,13 +218,19 @@ jobs:
             exit 0
           fi
 
-          VERSION="$FORMAE_VERSION"
-          if [ "$VERSION" = "" ]; then VERSION="latest"; fi
+          # "latest" is the scaffold's sentinel for "no preference", not a
+          # version the harness can parse. Translate it to passing nothing.
+          VERSION_ARG=""
+          case "$REQUESTED_VERSION" in
+            ""|latest) echo "formae version: harness default" ;;
+            *)         VERSION_ARG="VERSION=$REQUESTED_VERSION"
+                       echo "formae version: $REQUESTED_VERSION" ;;
+          esac
 
           # The default filter is the set that passes on an account with the
           # capabilities these fixtures need. Five fixtures are kept
           # deliberately red -- a removed test hides a gap, a red one names it --
           # so running all eleven exits non-zero by design. Dispatch with an
           # empty test_filter to see the whole picture.
-          echo "formae=$VERSION filter=${TEST_FILTER:-<all fixtures>}"
-          make conformance-test VERSION="$VERSION" TEST="$TEST_FILTER"
+          echo "fixtures: ${TEST_FILTER:-<all>}"
+          make conformance-test TEST="$TEST_FILTER" $VERSION_ARG
