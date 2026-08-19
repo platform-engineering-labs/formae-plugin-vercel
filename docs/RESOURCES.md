@@ -96,7 +96,7 @@ config = new vercel.Config {
 
 | Formae resource | Terraform resource | Fidelity |
 |-----------------|--------------------|----------|
-| `VERCEL::Projects::Project` | `vercel_project` | 1:1 on the implemented subset. Our field names are the API's camelCase (`buildCommand`), Terraform's are snake_case (`build_command`). We implement a subset: name + build settings + framework + node version. Not implemented: `git_repository`, `environment`, protection blocks, `resource_config`. |
+| `VERCEL::Projects::Project` | `vercel_project` | 1:1 on the implemented subset. Our field names are the API's camelCase (`buildCommand`), Terraform's are snake_case (`build_command`). We implement name + build settings + framework + node version + `gitRepository`. Not implemented: `environment` (inline env vars — we have them as their own resource), protection blocks (`password_protection`, `vercel_authentication`, `trusted_ips`), `resource_config`, `oidc_token_config`. |
 | `VERCEL::Projects::EnvironmentVariable` | `vercel_project_environment_variable` | 1:1 on `key`, `value`, `target`, `gitBranch`, `comment`, `customEnvironmentIds`, `projectId`. **Divergence:** Terraform models secrecy as a required boolean `sensitive`; we expose the API's own `type` enum (`plain`/`encrypted`/`sensitive`/`system`) instead, because the REST API round-trips `type` and we want Read to reflect it without translation. |
 
 **Create-only fields — divergences noted:**
@@ -229,6 +229,8 @@ Terraform is therefore not reachable without reversing this decision.
 | `vercel_oauth_app` | `POST/GET/PATCH/DELETE /v1/oauth-apps` | Undocumented. Vercel documents only the CLI (`vercel oauth-apps …`), no HTTP paths. The feature exists — the webhooks endpoint accepts `oauth-app-created` — but an existing feature is not a documented endpoint. |
 | `vercel_oauth_app_client_secret` | `POST/DELETE /v1/oauth-apps/{clientId}/secret` | Undocumented; keyed by the secret's last four characters. |
 | `vercel_project_crons` | `PATCH /v1/projects/{projectId}/crons` | Undocumented. `crons` appears only as a read-only sub-object of the project payload; `PATCH /v9/projects/{id}` has no crons field among its 44 body properties. Also a singleton toggle. |
+| `vercel_project.git_repository.production_branch` | not in the spec at all | Undocumented. No path in the REST reference or the machine-readable spec (288 paths, checked 2026-08-19) sets a production branch, and `PATCH /v9/projects/{id}` has no such property. |
+| `vercel_project.git_repository.deploy_hooks` | not in the spec at all | Undocumented, same check. Deploy hooks appear only as a read-only sub-object of the project's `link`. |
 | `vercel_integration_project_access` | `POST /v1/integrations/configuration/{integrationId}/project/{projectId}` | Undocumented, and a boolean toggle rather than a resource. The *documented* connections endpoint is a different thing: its 201 has no response body schema and it has no GET/PATCH/DELETE, so create cannot produce a native id and nothing reads back. |
 
 ### Still open, and now expressible
@@ -462,6 +464,7 @@ is better expressed by a CI pipeline than by declarative IaC.
 | `outputDirectory` | `outputDirectory` | no | Nullable, ≤256 chars |
 | `rootDirectory` | `rootDirectory` | no | Nullable, ≤256 chars |
 | `nodeVersion` | `nodeVersion` | no | Enum `18.x`/`20.x`/`22.x`/`24.x`/… Absent from the documented `POST /v11/projects` body but present on the project object and settable via PATCH, so the plugin only sends it on update. |
+| `gitRepository` | `gitRepository` (write) / `link` (read) | **yes** | `{type, repo}`, both required together. `repo` is `"owner/name"`. Write and read names differ, and the read shape differs per provider — see below. |
 | `id` (read-only) | `id` | — | `prj_…` |
 | `accountId` (read-only) | `accountId` | — | |
 
@@ -495,3 +498,30 @@ Read gotchas:
   `encrypted` for formae-managed values, or accept the drift knowingly.
 - The create response is `{created: {...}|[...], failed: [...]}` — a 201 with a non-empty
   `failed` array is still a failure and is treated as one.
+
+### `gitRepository` — asymmetric on the wire
+
+`POST /v11/projects` accepts `gitRepository: {type, repo}` where `repo` is
+`"owner/name"`. Nothing else writes it: the documented
+`PATCH /v9/projects/{idOrName}` body has 44 properties and none is the git link
+(only `gitForkProtection`, `gitLFS` and `skipGitConnectDuringLink`), so the
+field is `createOnly` and a change replaces the project.
+
+Reads come back as `link`, a `oneOf` over seven provider variants that spell
+the owner and repository differently:
+
+| Provider | Owner field | Name field |
+|---|---|---|
+| `github`, `github-limited`, `github-custom-host`, `vercel` | `org` | `repo` |
+| `gitlab` | `projectNamespace` | `projectName` |
+| `bitbucket` | `owner` | `slug` |
+| `cursor-origin` | `owner` | `repo` |
+
+The plugin folds every variant back into `"owner/name"`, so a declared
+`vercel/next.js` round-trips instead of reading back as `next.js` and drifting
+on every sync. A `link` with `sourceless: true` is a *disconnected* repository
+and reads as no repository at all.
+
+**No conformance fixture.** Attaching a repository needs a real repo the token
+can reach plus a git credential on the account, so this is unit-tested only —
+the only implemented field on `Project` not proven against the live API.
