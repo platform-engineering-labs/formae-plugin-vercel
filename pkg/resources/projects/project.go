@@ -58,6 +58,88 @@ type ProjectProperties struct {
 	OutputDirectory *string `json:"outputDirectory,omitempty"`
 	RootDirectory   *string `json:"rootDirectory,omitempty"`
 	NodeVersion     *string `json:"nodeVersion,omitempty"`
+
+	// GitRepository is asymmetric on the wire: it is written as
+	// `gitRepository` and read back as `link`, in a shape that differs per
+	// provider. projectLink does that translation; this field is what the forma
+	// declares and what Read must reproduce.
+	GitRepository *GitRepository `json:"gitRepository,omitempty"`
+}
+
+// GitRepository is the connected source repository. Create-only: the documented
+// PATCH /v9/projects/{idOrName} body has 44 properties and none of them is the
+// git link, so a change here is a replace.
+//
+// Terraform's git_repository also carries production_branch and deploy_hooks.
+// Neither has a documented endpoint — they are not in the REST reference nor in
+// the machine-readable spec (288 paths, checked) — so they are out of scope
+// under the documented-endpoints-only policy in docs/RESOURCES.md.
+type GitRepository struct {
+	// Type is the provider: github, github-limited, gitlab, bitbucket, vercel,
+	// cursor-origin.
+	Type string `json:"type"`
+	// Repo is "owner/name", e.g. "vercel/next.js".
+	Repo string `json:"repo"`
+}
+
+// projectLink is the `link` object Vercel answers with. Each provider spells
+// the owner and the repository differently, and every variant folds back into
+// GitRepository.Repo as "owner/name".
+type projectLink struct {
+	Type string `json:"type"`
+	// Sourceless marks a link whose repository has been disconnected. Vercel
+	// keeps the object; there is no repository.
+	Sourceless bool `json:"sourceless"`
+
+	// github, github-limited, github-custom-host, vercel
+	Org  string `json:"org"`
+	Repo string `json:"repo"`
+
+	// gitlab
+	ProjectNamespace string `json:"projectNamespace"`
+	ProjectName      string `json:"projectName"`
+
+	// bitbucket
+	Owner string `json:"owner"`
+	Slug  string `json:"slug"`
+}
+
+// gitRepository folds a link into the declared shape, or returns nil when the
+// project has no usable repository. Reporting a repository that is not there
+// would make every plain project drift on every sync.
+func (l *projectLink) gitRepository() *GitRepository {
+	if l == nil || l.Type == "" || l.Sourceless {
+		return nil
+	}
+	var owner, name string
+	switch {
+	case l.ProjectNamespace != "" || l.ProjectName != "":
+		owner, name = l.ProjectNamespace, l.ProjectName
+	case l.Owner != "" || l.Slug != "":
+		owner, name = l.Owner, l.Slug
+	default:
+		owner, name = l.Org, l.Repo
+	}
+	if owner == "" || name == "" {
+		// A provider variant nobody mapped. Silently inventing half a
+		// repository name is worse than reporting none.
+		return nil
+	}
+	return &GitRepository{Type: l.Type, Repo: owner + "/" + name}
+}
+
+// projectResponse is the API's own shape: everything ProjectProperties has,
+// except the repository, which arrives as `link`.
+type projectResponse struct {
+	ProjectProperties
+	Link *projectLink `json:"link"`
+}
+
+// properties is the response as the forma declares it.
+func (r *projectResponse) properties() ProjectProperties {
+	out := r.ProjectProperties
+	out.GitRepository = r.Link.gitRepository()
+	return out
 }
 
 func (p *Project) Create(ctx context.Context, req *resource.CreateRequest) (*resource.CreateResult, error) {
@@ -86,7 +168,17 @@ func (p *Project) Create(ctx context.Context, req *resource.CreateRequest) (*res
 		}
 	}
 
-	var created ProjectProperties
+	// The repository can only be attached at create time, and both halves are
+	// required together by POST /v11/projects.
+	if gr := desired.GitRepository; gr != nil {
+		if gr.Type == "" || gr.Repo == "" {
+			return prov.FailCreate(resource.OperationErrorCodeInvalidRequest,
+				"gitRepository needs both type and repo"), nil
+		}
+		body["gitRepository"] = map[string]any{"type": gr.Type, "repo": gr.Repo}
+	}
+
+	var created projectResponse
 	if err := p.Client.Do(ctx, vercelapi.Request{
 		Method: "POST",
 		Path:   "/v11/projects",
@@ -97,11 +189,11 @@ func (p *Project) Create(ctx context.Context, req *resource.CreateRequest) (*res
 	if created.ID == "" {
 		return prov.FailCreate(resource.OperationErrorCodeServiceInternalError, "create response missing id"), nil
 	}
-	return prov.SuccessCreate(created.ID, created), nil
+	return prov.SuccessCreate(created.ID, created.properties()), nil
 }
 
 func (p *Project) Read(ctx context.Context, req *resource.ReadRequest) (*resource.ReadResult, error) {
-	var got ProjectProperties
+	var got projectResponse
 	if err := p.Client.Do(ctx, vercelapi.Request{
 		Method: "GET",
 		Path:   "/v9/projects/" + req.NativeID,
@@ -110,7 +202,7 @@ func (p *Project) Read(ctx context.Context, req *resource.ReadRequest) (*resourc
 	}
 	return &resource.ReadResult{
 		ResourceType: req.ResourceType,
-		Properties:   string(prov.MustMarshal(got)),
+		Properties:   string(prov.MustMarshal(got.properties())),
 	}, nil
 }
 
@@ -122,7 +214,8 @@ func (p *Project) Update(ctx context.Context, req *resource.UpdateRequest) (*res
 
 	// PATCH is declarative: every mutable field is sent on every update so a
 	// field the user removed is cleared (nil marshals to null, which is how
-	// Vercel spells "auto-detect"). `name` is createOnly and never sent.
+	// Vercel spells "auto-detect"). `name` and `gitRepository` are createOnly
+	// and never sent.
 	body := map[string]any{
 		"framework":       desired.Framework,
 		"buildCommand":    desired.BuildCommand,
@@ -137,7 +230,7 @@ func (p *Project) Update(ctx context.Context, req *resource.UpdateRequest) (*res
 		body["nodeVersion"] = *desired.NodeVersion
 	}
 
-	var updated ProjectProperties
+	var updated projectResponse
 	if err := p.Client.Do(ctx, vercelapi.Request{
 		Method: "PATCH",
 		Path:   "/v9/projects/" + req.NativeID,
@@ -145,7 +238,7 @@ func (p *Project) Update(ctx context.Context, req *resource.UpdateRequest) (*res
 	}, &updated); err != nil {
 		return prov.FailUpdate(vercelapi.ClassifyError(err), err.Error()), nil
 	}
-	return prov.SuccessUpdate(req.NativeID, updated), nil
+	return prov.SuccessUpdate(req.NativeID, updated.properties()), nil
 }
 
 func (p *Project) Delete(ctx context.Context, req *resource.DeleteRequest) (*resource.DeleteResult, error) {

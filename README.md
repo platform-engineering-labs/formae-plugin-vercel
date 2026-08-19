@@ -19,7 +19,7 @@ Each implements Create, Read, Update, Delete and List unless noted.
 
 | Resource Type | Notes |
 |---------------|-------|
-| `VERCEL::Projects::Project` | An empty project (no Git repo, no deployment) is free and instant. `name` is immutable — changing it replaces the project. |
+| `VERCEL::Projects::Project` | An empty project (no Git repo, no deployment) is free and instant. Set `gitRepository` to connect a repo so pushes deploy. `name` and `gitRepository` are immutable — changing either replaces the project. |
 | `VERCEL::Projects::EnvironmentVariable` | Reference the project with `project.res.id`. |
 | `VERCEL::Projects::CustomEnvironment` | Named `slug` on the wire, not `name`. |
 | `VERCEL::Projects::Domain` | Keyed by the domain name. Custom domains need a paid plan. |
@@ -108,6 +108,13 @@ local site = new vercel.Project {
   framework = "nextjs"
   buildCommand = "npm run build"
   outputDirectory = ".next"
+
+  // Optional. Connect a repository so pushes deploy automatically.
+  // Immutable: changing it replaces the project.
+  gitRepository = new vercel.GitRepository {
+    type = "github"
+    repo = "my-org/my-site"
+  }
 }
 
 forma {

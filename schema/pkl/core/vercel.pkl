@@ -62,6 +62,26 @@ open class ProjectResolvable extends formae.Resolvable {
     hidden name: ProjectResolvable = (this) { property = "name" }
 }
 
+/// A connected Git repository. Pushes to this repository deploy automatically.
+///
+/// Create-only in both fields: `POST /v11/projects` takes `gitRepository`, and
+/// the documented `PATCH /v9/projects/{idOrName}` body carries no git link among
+/// its 44 properties. Changing either field replaces the project.
+///
+/// Terraform's `git_repository` also carries `production_branch` and
+/// `deploy_hooks`. Neither is reachable through a documented endpoint, so both
+/// are out of scope here — see the won't-fix table in docs/RESOURCES.md.
+class GitRepository {
+    /// Git provider hosting the repository.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    type: "github" | "github-limited" | "gitlab" | "bitbucket" | "vercel" | "cursor-origin"
+
+    /// Repository as "owner/name", e.g. "vercel/next.js". For a GitLab
+    /// subgroup, the full namespace: "group/subgroup/name".
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    repo: String
+}
+
 /// A Vercel project. Maps to `POST /v11/projects`.
 ///
 /// Create/update/delete are synchronous — there is no provisioning wait.
@@ -127,6 +147,15 @@ class Project extends formae.Resource {
     /// state as carrying a property the forma never asked for.
     @formae.FieldHint { hasProviderDefault = true }
     nodeVersion: String? = null
+
+    /// Git repository to connect. Null leaves the project without a source,
+    /// which is a valid state — nothing deploys until a repository is attached.
+    ///
+    /// Written as `gitRepository` on create and read back from the project's
+    /// `link` object, whose shape differs per provider; the plugin folds every
+    /// variant back into "owner/name" so the declared value round-trips.
+    @formae.FieldHint { createOnly = true }
+    gitRepository: GitRepository? = null
 }
 
 // =============================================================================
