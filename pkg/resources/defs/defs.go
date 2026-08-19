@@ -56,6 +56,7 @@ func core() []rest.Definition {
 		customEnvironment(),
 		projectDomain(),
 		dnsRecord(),
+		domain(),
 		globalConfig(),
 		webhook(),
 		network(),
@@ -310,6 +311,42 @@ func vcrRepository() rest.Definition {
 		ListQuery:      map[string]string{"projectId": "{parent}"},
 		Unwrap:         "repository",
 		ListField:      "repositories",
+		Fields:         []string{"name"},
+		CreateOnly:     []string{"name"},
+		NoUpdate:       true,
+	}
+}
+
+// domain — POST /v7/domains registers a domain on the account or team.
+//
+// This is the step that DNS::Record and Projects::Domain both presuppose:
+// records need a domain the account holds, and attaching a domain to a project
+// does not bring the domain itself under management. Terraform has no
+// equivalent resource, which is why this gap never showed up in the parity
+// matrix.
+//
+// Addressed by name everywhere — GET /v5/domains/{domain},
+// DELETE /v6/domains/{domain} — so the native id is the domain name, not the
+// `dom_…` id the object also carries.
+//
+// NoUpdate is deliberate. PATCH /v3/domains/{domain} is op-based
+// (`{op, zone, renew, customNameservers}` or `{op, destination}` to move the
+// domain out), the `op` values are not enumerated in the spec, and the 200 has
+// no response body — nothing that can be driven declaratively. Only `name` is
+// modelled, and it is createOnly, so there is nothing to update: everything
+// else the domain object returns (nameservers, verified, expiresAt) is
+// Vercel's to decide, not the forma's.
+func domain() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Domains::Domain",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v7/domains",
+		ItemPath:       "/v5/domains/{id}",
+		ItemPathDelete: "/v6/domains/{id}",
+		ListPath:       "/v5/domains",
+		ListField:      "domains",
+		Unwrap:         "domain",
+		IDField:        "name",
 		Fields:         []string{"name"},
 		CreateOnly:     []string{"name"},
 		NoUpdate:       true,
