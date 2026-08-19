@@ -115,10 +115,9 @@ jobs:
         with:
           pkl-version: 0.30.0
 
-      # Configure credentials for your infrastructure here
-      # Example:
-      # env:
-      #   MY_API_KEY: ${{ secrets.MY_API_KEY }}
+      # This job is disabled (if: false) — the plugin has no integration tests
+      # separate from conformance. If it is ever enabled it needs VERCEL_TOKEN,
+      # the same way the conformance job does.
 
       - name: Run integration tests
         run: make test-integration
@@ -165,42 +164,18 @@ jobs:
         with:
           pkl-version: 0.30.0
 
-      # =================================================================
-      # CREDENTIAL SETUP - Uncomment and configure for your provider
-      # =================================================================
-
-      # AWS (OIDC - recommended)
-      # - name: Configure AWS Credentials
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     aws-region: us-east-1
-      #     role-to-assume: arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME
-      #     role-session-name: ConformanceTests
-
-      # Azure (OIDC - recommended)
-      # - name: Configure Azure Credentials
-      #   uses: azure/login@v2
-      #   with:
-      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
-      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      # GCP (OIDC - recommended)
-      # - name: Configure GCP Credentials
-      #   uses: google-github-actions/auth@v2
-      #   with:
-      #     workload_identity_provider: projects/PROJECT_ID/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
-      #     service_account: SA_NAME@PROJECT_ID.iam.gserviceaccount.com
-
-      # OpenStack (secrets-based)
-      # - name: Configure OpenStack Credentials
-      #   run: |
-      #     echo "OS_AUTH_URL=${{ secrets.OS_AUTH_URL }}" >> $GITHUB_ENV
-      #     echo "OS_USERNAME=${{ secrets.OS_USERNAME }}" >> $GITHUB_ENV
-      #     echo "OS_PASSWORD=${{ secrets.OS_PASSWORD }}" >> $GITHUB_ENV
-      #     echo "OS_PROJECT_ID=${{ secrets.OS_PROJECT_ID }}" >> $GITHUB_ENV
-
-      # =================================================================
+      # Vercel credentials. The plugin reads the token from the environment and
+      # never from a forma; VERCEL_TEAM_ID is optional and selects a team
+      # instead of the personal account.
+      #
+      # Five of the eleven fixtures need capabilities a Hobby plan and a
+      # narrowly-scoped token do not have (custom environments, drains, access
+      # groups, user tokens), so this job is expected to exit non-zero until the
+      # token and plan allow them. See docs/RESOURCES.md.
+      - name: Configure Vercel credentials
+        run: |
+          echo "VERCEL_TOKEN=${{ secrets.VERCEL_TOKEN }}" >> $GITHUB_ENV
+          echo "VERCEL_TEAM_ID=${{ secrets.VERCEL_TEAM_ID }}" >> $GITHUB_ENV
 
       - name: Install plugin
         run: make install
