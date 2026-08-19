@@ -70,10 +70,10 @@ type ProjectProperties struct {
 // PATCH /v9/projects/{idOrName} body has 44 properties and none of them is the
 // git link, so a change here is a replace.
 //
-// Terraform's git_repository also carries production_branch and deploy_hooks.
-// Neither has a documented endpoint — they are not in the REST reference nor in
-// the machine-readable spec (288 paths, checked) — so they are out of scope
-// under the documented-endpoints-only policy in docs/RESOURCES.md.
+// A production branch and deploy hooks are deliberately not modelled: neither
+// has a documented endpoint. They appear in neither the REST reference nor the
+// machine-readable spec (288 paths, checked), and this plugin uses only
+// endpoints Vercel documents.
 type GitRepository struct {
 	// Type is the provider: github, github-limited, gitlab, bitbucket, vercel,
 	// cursor-origin.

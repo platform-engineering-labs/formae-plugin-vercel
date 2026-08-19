@@ -9,13 +9,13 @@ import "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/
 // This file declares Vercel's Drains — the unified pipe that forwards logs,
 // traces and audit-log events off the platform.
 //
-// Terraform's `vercel_log_drain`, `vercel_trace_drain` and
-// `vercel_audit_log_drain` look like three resources but are one endpoint:
-// all three call `POST /v1/drains` and differ only in the `schemas` key they
-// send (`log`, `trace`, `audit_log`) and in the `delivery` variant that goes
-// with it. Modelling them as three formae types would give three resources
-// that create, read and — worse — *discover* the same objects, so they are one
-// type here: VERCEL::Drains::Drain.
+// Log drains, trace drains and audit-log drains look like three resources but
+// are one endpoint: all three are `POST /v1/drains`, differing only in the
+// `schemas` key they send (`log`, `trace`, `audit_log`) and in the `delivery`
+// variant that goes with it. Modelling them as three formae types would give
+// three types that create, read and — worse — *discover* the same objects, so
+// every drain would appear three times. They are one type here:
+// VERCEL::Drains::Drain.
 //
 // The older `POST /v1/log-drains` "Configurable Log Drain" is deliberately not
 // declared; see the note at the bottom of this file.
@@ -37,7 +37,7 @@ func drains() []rest.Definition {
 //	DELETE /v1/drains/{id}  https://vercel.com/docs/rest-api/drains/delete-a-drain
 //
 // Every property name below is taken from those pages' own JSON schemas
-// (machine-readable copy: https://openapi.vercel.sh/), not from the Terraform
+// (machine-readable copy: https://openapi.vercel.sh/), not from any other
 // provider's snake_case attribute names.
 //
 // Wire facts that shape this definition:
@@ -72,8 +72,8 @@ func drains() []rest.Definition {
 // delivery and sampling), so only the fields that change what the drain *is*
 // are marked create-only:
 //
-//   - `schemas` decides whether this is a log, trace or audit-log drain. It is
-//     precisely what Terraform splits into three resource types.
+//   - `schemas` decides whether this is a log, trace or audit-log drain — the
+//     one field that changes which kind of drain this is.
 //   - `source` records whether the drain is self-served or owned by an
 //     integration; it is provenance, not configuration.
 //   - `projects` is never returned, so an in-place PATCH could only ever resend
@@ -105,10 +105,9 @@ func drain() rest.Definition {
 // still exist and are documented, but are marked *deprecated* and answer 410
 // among their documented statuses. Two things rule them out:
 //
-//  1. They are not what `vercel_log_drain` wraps. The official provider's
-//     client (client/log_drain.go) posts to /v1/drains, so declaring
-//     /v1/log-drains would not be the Terraform equivalent — it would be a
-//     second, divergent log drain.
+//  1. They are a different thing from the drains above, not an older spelling
+//     of them. Declaring /v1/log-drains alongside /v1/drains would give a
+//     second, divergent log drain rather than one resource.
 //  2. Their responses are undocumented where it matters. The create response is
 //     published as a bare `{"type": "object"}` with no properties, and the read
 //     response documents only `createdFrom`, `clientId`, `configurationId`,

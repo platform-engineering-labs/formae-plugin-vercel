@@ -19,6 +19,17 @@ on:
         required: false
         default: 'latest'
         type: string
+      test_filter:
+        description: 'Fixtures to run, comma separated. Default is the set
+          expected to pass on a token and plan that allow them; clear it to run
+          all eleven, including the five kept deliberately red for
+          capabilities a token or plan may not have. Use literal names, not the
+          harness regex form:
+          TEST goes through make, which eats a bare $ and would silently turn
+          an anchored /…$/ pattern into one that matches nothing.'
+        required: false
+        default: 'project,envvar,globalconfig,webhook,vcrrepository,route'
+        type: string
 
 jobs:
   build:
@@ -133,9 +144,10 @@ jobs:
   conformance-tests:
     needs: [build, lint, pkl-validate, verify-schema]
     runs-on: ubuntu-latest
-    # Disabled by default - change condition after configuring credentials:
-    # if: github.event_name == 'schedule' || github.event_name == 'push' || github.event.inputs.run_conformance == 'true'
-    if: ${{ github.event.inputs.run_conformance == 'true' }}
+    # Nightly, or on demand. Deliberately not on push or pull_request: every run
+    # creates and destroys real Vercel resources, and a fork's PR has no
+    # credentials to do it with.
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.run_conformance == 'true' }}
     timeout-minutes: 60
 
     strategy:
@@ -164,29 +176,34 @@ jobs:
         with:
           pkl-version: 0.30.0
 
-      # Vercel credentials. The plugin reads the token from the environment and
-      # never from a forma; VERCEL_TEAM_ID is optional and selects a team
-      # instead of the personal account.
-      #
-      # Five of the eleven fixtures need capabilities a Hobby plan and a
-      # narrowly-scoped token do not have (custom environments, drains, access
-      # groups, user tokens), so this job is expected to exit non-zero until the
-      # token and plan allow them. See docs/RESOURCES.md.
-      - name: Configure Vercel credentials
-        run: |
-          echo "VERCEL_TOKEN=${{ secrets.VERCEL_TOKEN }}" >> $GITHUB_ENV
-          echo "VERCEL_TEAM_ID=${{ secrets.VERCEL_TEAM_ID }}" >> $GITHUB_ENV
-
       - name: Install plugin
         run: make install
 
       - name: Run conformance tests
         env:
+          # The plugin reads its token from the environment and never from a
+          # forma. VERCEL_TEAM_ID is optional: unset means the token's personal
+          # account.
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          # Isolates this run's resources from any other run's, so a nightly and
+          # a manual dispatch cannot clean up each other's projects.
           FORMAE_TEST_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          FORMAE_VERSION: ${{ inputs.formae_version || matrix.formae_version }}
+          TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route' }}
         run: |
-          # Use input version if provided, otherwise use matrix version
-          VERSION="${{ inputs.formae_version }}"
-          if [ "$VERSION" = "" ] || [ "$VERSION" = "latest" ]; then
-            VERSION="${{ matrix.formae_version }}"
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::notice title=Conformance skipped::VERCEL_TOKEN is not set on this repository. Add it under Settings -> Secrets and variables -> Actions."
+            exit 0
           fi
-          make conformance-test VERSION="$VERSION"
+
+          VERSION="$FORMAE_VERSION"
+          if [ "$VERSION" = "" ]; then VERSION="latest"; fi
+
+          # The default filter is the set that passes on an account with the
+          # capabilities these fixtures need. Five fixtures are kept
+          # deliberately red -- a removed test hides a gap, a red one names it --
+          # so running all eleven exits non-zero by design. Dispatch with an
+          # empty test_filter to see the whole picture.
+          echo "formae=$VERSION filter=${TEST_FILTER:-<all fixtures>}"
+          make conformance-test VERSION="$VERSION" TEST="$TEST_FILTER"

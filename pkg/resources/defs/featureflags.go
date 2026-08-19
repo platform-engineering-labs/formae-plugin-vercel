@@ -6,9 +6,8 @@ package defs
 
 import "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/rest"
 
-// Vercel's feature-flag endpoints (Terraform's vercel_feature_flag_definition,
-// _segment and _sdk_key). Three things set them apart from every other resource
-// in this package:
+// Vercel's feature-flag endpoints: flag definitions, segments and SDK keys.
+// Three things set them apart from every other resource in this package:
 //
 //   - Create is PUT, not POST. None of the three collections has a POST verb.
 //   - Every collection response is enveloped as {"data": [...]}, and the flag
@@ -16,10 +15,10 @@ import "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/
 //     engine does not follow yet, so discovery sees the first page only.
 //   - They are all project-scoped, so native ids are "{projectId}/{id}".
 //
-// Terraform's vercel_feature_flag_config is deliberately absent: it maps to
+// Per-project feature-flag *settings* are deliberately absent: they live at
 // GET/PATCH /v1/projects/{projectIdOrName}/feature-flags/settings, a per-project
-// singleton with no id of its own, which the engine cannot model (see the
-// "Engine capabilities still missing" list in docs/RESOURCES.md).
+// singleton with no id of its own. The engine can express that shape now
+// (Singleton), but it is not declared yet.
 func featureFlags() []rest.Definition {
 	return []rest.Definition{
 		flag(),

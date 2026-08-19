@@ -9,9 +9,9 @@
 /// Every endpoint in this module hangs off a project and is created with `PUT`
 /// rather than `POST`, so native ids are `{projectId}/{id}`.
 ///
-/// Terraform's `vercel_feature_flag_config` has no counterpart here: it maps to
+/// Per-project feature-flag *settings* have no counterpart here: they live at
 /// `/v1/projects/{projectIdOrName}/feature-flags/settings`, a per-project
-/// singleton with no id of its own, which formae cannot model yet.
+/// singleton with no id of its own, and are not declared yet.
 ///
 /// Reference: <https://vercel.com/docs/rest-api#feature-flags>
 module featureflags

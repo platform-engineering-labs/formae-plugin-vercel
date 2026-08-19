@@ -11,9 +11,9 @@
 /// the `schemas` map (`log`, `trace`, `audit_log`, …) and the matching
 /// `delivery` transport.
 ///
-/// The official Terraform provider splits this into three resources —
-/// `vercel_log_drain`, `vercel_trace_drain` and `vercel_audit_log_drain` — but
-/// all three of its clients call `POST /v1/drains`. They are one resource here.
+/// Log, trace and audit-log drains are one resource here, not three: they are
+/// the same endpoint, and separate types would discover the same objects
+/// repeatedly.
 ///
 /// Endpoint reference:
 /// <https://vercel.com/docs/rest-api/drains/create-a-new-drain>
@@ -273,15 +273,14 @@ class DrainSource extends formae.SubResource {
 
 /// A Vercel Drain. Maps to `POST /v1/drains`.
 ///
-/// One resource covers all three of the provider's drain kinds; `schemas`
-/// decides which:
+/// One resource covers all three drain kinds; `schemas` decides which:
 ///
 /// - **log drain** — `schemas { ["log"] { version = "v1" } }` with an `http`
-///   delivery. Equivalent to `vercel_log_drain`.
+///   delivery.
 /// - **trace drain** — `schemas { ["trace"] { version = "v1" } }` with an
-///   `otlphttp` delivery. Equivalent to `vercel_trace_drain`.
+///   `otlphttp` delivery.
 /// - **audit log drain** — `schemas { ["audit_log"] { version = "v1" } }` with
-///   an `http` or `s3` delivery. Equivalent to `vercel_audit_log_drain`.
+///   an `http` or `s3` delivery.
 ///
 /// Create, update and delete are synchronous.
 ///

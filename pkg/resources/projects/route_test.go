@@ -60,6 +60,14 @@ func TestRoute_Create_PromotesStagedVersion(t *testing.T) {
 			if match["status"] != float64(308) {
 				t.Errorf("status = %v", match["status"])
 			}
+			// The body is the struct itself now, so a field added without
+			// omitempty would start leaking into the payload. projectId is in
+			// the path and id in the native id; neither belongs here.
+			for _, k := range []string{"projectId", "id"} {
+				if _, present := route[k]; present {
+					t.Errorf("%q must not be sent in the route body", k)
+				}
+			}
 			_, _ = io.WriteString(w, `{"route":{"id":"route_1","name":"old-blog","staged":true,
 				"route":{"src":"/blog/:path*","dest":"/posts/:path*","status":308}},
 				"version":{"id":"ver_1","isStaging":true,"isLive":false}}`)

@@ -14,9 +14,8 @@ Installs the binary, schema and manifest to `~/.pel/formae/plugins/vercel/v<vers
 
 ## Supported Resources
 
-21 resource types, covering 21 of the official Terraform provider's 50 resources,
-plus one (`Domains::Domain`) the Terraform provider has no equivalent for.
-Each implements Create, Read, Update, Delete and List unless noted.
+21 resource types. Each implements Create, Read, Update, Delete and List
+unless noted.
 
 | Resource Type | Notes |
 |---------------|-------|
@@ -37,7 +36,7 @@ Each implements Create, Read, Update, Delete and List unless noted.
 | `VERCEL::Certs::Certificate` | Vercel-issued cert for a set of common names. |
 | `VERCEL::Certs::UploadedCertificate` | Your own cert: three PEM blobs, all write-only. |
 | `VERCEL::Deployments::Alias` | Created under a deployment, but read/listed/deleted account-wide. |
-| `VERCEL::Drains::Drain` | One type covers Terraform's log, trace **and** audit-log drains — they are all `POST /v1/drains`, differing only by `schemas` and delivery type. |
+| `VERCEL::Drains::Drain` | One type covers log, trace **and** audit-log drains — they are all `POST /v1/drains`, differing only by `schemas` and delivery type. |
 | `VERCEL::FeatureFlags::Flag` | Create verb is PUT. |
 | `VERCEL::FeatureFlags::Segment` | Create verb is PUT. |
 | `VERCEL::FeatureFlags::SDKKey` | Keyed by `hashKey`. No update. |
@@ -45,17 +44,19 @@ Each implements Create, Read, Update, Delete and List unless noted.
 Most operations are synchronous. `Networking::Network` is not: create returns
 InProgress and polls until the network is actually usable.
 
-[`docs/RESOURCES.md`](docs/RESOURCES.md) holds the full 50-resource parity matrix
-against `vercel/terraform-provider-vercel`, including what is deliberately out of
-scope and why. Design notes are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
 ### Scope policy
 
-This plugin uses **only endpoints Vercel publicly documents**. A handful of
-Terraform resources (blob stores, OAuth apps, project crons, integration project
-access) are reachable only through undocumented paths, so they are out of scope
-and 1:1 parity is not attainable. The won't-fix table in `docs/RESOURCES.md` names
-each one and the path Terraform uses.
+This plugin uses **only endpoints Vercel publicly documents** — those in the REST
+reference and its machine-readable spec at <https://openapi.vercel.sh/>. Several
+things Vercel itself supports are reachable only through paths it does not
+document (blob stores, OAuth apps, project crons, integration project access), so
+they are out of scope: an undocumented path can change without notice, and there
+would be no ground to stand on when it does.
+
+Resources are also left out when the API cannot round-trip them. A create
+response with no id, a read that returns none of the managed fields, or a
+collection with no list endpoint each make a resource undeclarable rather than
+merely unwritten.
 
 ## Credentials
 
@@ -65,7 +66,7 @@ at <https://vercel.com/account/settings/tokens>.
 | Variable | Description |
 |----------|-------------|
 | `VERCEL_TOKEN` | Access token (Vercel CLI convention). Checked first. |
-| `VERCEL_API_TOKEN` | Same thing under the official Terraform provider's name. Fallback. |
+| `VERCEL_API_TOKEN` | Same thing under an alternative conventional name. Fallback. |
 
 ```bash
 export VERCEL_TOKEN=...
@@ -203,6 +204,34 @@ Conformance tests create and destroy real Vercel projects. They need:
 | `VERCEL_TOKEN` | yes | Access token |
 | `VERCEL_TEAM_ID` | no | Run against a team instead of the personal account |
 | `VERCEL_PROJECT_ID` | no | Scope env-var discovery to one project on large accounts |
+
+### Conformance in CI
+
+The `conformance-tests` job runs nightly and on `workflow_dispatch`. It is
+deliberately **not** run on push or pull request: every run creates and destroys
+real Vercel resources, and a pull request from a fork has no credentials to do it
+with.
+
+Set these under **Settings → Secrets and variables → Actions**:
+
+| Secret | Required | Purpose |
+|--------|----------|---------|
+| `VERCEL_TOKEN` | yes | Without it the job logs a notice and exits 0 rather than failing confusingly |
+| `VERCEL_TEAM_ID` | no | Run against a team instead of the token's personal account |
+
+The job runs a **filtered set of fixtures** by default —
+`project,envvar,globalconfig,webhook,vcrrepository,route` — because five of the
+eleven are kept deliberately red for capabilities a token or plan may not have,
+and a job that always fails is a job nobody reads. Dispatch with `test_filter`
+emptied to run all eleven and see the full picture.
+
+Use literal fixture names in `test_filter`, comma separated. The harness also
+accepts a `/regex/` form, but `TEST` passes through `make`, which treats a bare
+`$` as a variable reference — an anchored `/…$/` pattern silently loses its
+anchor and then matches nothing.
+
+Each run isolates its resources with `FORMAE_TEST_RUN_ID`, so a nightly and a
+manual dispatch cannot clean up each other's projects.
 
 Every test resource is named `formae-sdk-test-*`;
 [`scripts/ci/clean-environment.sh`](scripts/ci/clean-environment.sh) deletes anything

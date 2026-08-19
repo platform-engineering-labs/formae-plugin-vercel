@@ -38,5 +38,3 @@ CLAUDE.md
 # environment (VERCEL_TOKEN / VERCEL_API_TOKEN) and conformance runs source it
 # from here. Previously only a personal global gitignore kept this out.
 .env
-.env.*
-!.env.example

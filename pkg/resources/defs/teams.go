@@ -6,9 +6,9 @@ package defs
 
 import "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/rest"
 
-// This group was opened for team membership (Terraform's `vercel_team_member`)
-// and grew a second inhabitant: the certificate *upload* flow, which completes
-// the custom-certificate story started by certificate() in defs.go.
+// This group was opened for team membership and grew a second inhabitant: the
+// certificate *upload* flow, which completes the custom-certificate story
+// started by certificate() in defs.go.
 //
 // # Why VERCEL::Teams::Member is not here
 //
@@ -21,9 +21,8 @@ import "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/
 //
 // In this plugin the team is *not* resource state. It is target configuration
 // (`vercel.Config.teamId` / `.slug`), held privately by the transport client and
-// injected as a `?teamId=` query parameter on every request; docs/ARCHITECTURE.md
-// deliberately keeps it out of native ids so a resource cannot appear to move
-// between teams. rest.Definition's path templates can only interpolate
+// injected as a `?teamId=` query parameter on every request. It is deliberately
+// kept out of native ids so a resource cannot appear to move between teams. rest.Definition's path templates can only interpolate
 // `{parent}` and `{id}` from the native id and `{prop:…}` from the resource's own
 // properties, and rest.New is handed only the client and the project scope — so
 // there is no expression that puts the target's team into the path.
@@ -34,12 +33,10 @@ import "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/
 //     from the target config, which means changing rest.New's signature and the
 //     factory in defs.go. Cleanest, and it keeps the team out of resource state.
 //  2. Restate the team as a resource property (rest.ScopeParent with
-//     ParentProperty "teamId", parents enumerated from GET /v2/teams). This is
-//     what the Terraform provider does — `vercel_team_member.team_id` is a
-//     required attribute — but here it would duplicate target config into every
-//     resource, put the team into the native id against ARCHITECTURE.md, and
-//     make discovery walk every team the token can see while the client keeps
-//     stamping the *target's* team onto the query string. Members of teams the
+//     ParentProperty "teamId", parents enumerated from GET /v2/teams). This
+//     would duplicate target config into every resource, put the team into the
+//     native id, and make discovery walk every team the token can see while the
+//     client keeps stamping the *target's* team onto the query string. Members of teams the
 //     target is not scoped to would be reported as discovered.
 //
 // Two further mismatches would remain even after (1) or (2), so this is not a
@@ -67,9 +64,8 @@ func init() { AddGroup(teams()) }
 // =============================================================================
 
 // uploadedCertificate — PUT /v8/certs uploads a certificate you already hold,
-// as three PEM blobs. This is the flow Terraform's `vercel_custom_certificate`
-// wraps, and it is a different endpoint from the issue flow that certificate()
-// in defs.go declares (POST /v8/certs, which asks Vercel to obtain a
+// as three PEM blobs. A different endpoint from the issue flow that
+// certificate() in defs.go declares (POST /v8/certs, which asks Vercel to obtain a
 // certificate for a set of common names). Same collection, same item routes,
 // two different verbs and two different request bodies — hence two types.
 //
@@ -79,8 +75,7 @@ func init() { AddGroup(teams()) }
 // https://vercel.com/docs/rest-api/certs/get-certs
 //
 // Wire names are the reference page's own: `cert`, `ca`, `key` (all required)
-// and the optional `skipValidation`. They are nothing like Terraform's
-// `certificate` / `certificate_authority_certificate` / `private_key`.
+// and the optional `skipValidation`.
 //
 // All three PEM fields are write-only. The documented 200 body of both PUT
 // /v8/certs and GET /v8/certs/{id} is `{id, createdAt, expiresAt, autoRenew,

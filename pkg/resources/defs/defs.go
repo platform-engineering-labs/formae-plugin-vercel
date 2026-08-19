@@ -6,16 +6,14 @@
 // and registers them.
 //
 // Every Definition here was written against the endpoint's own API reference
-// page — request-body property names come from the documented JSON schema, not
-// from the Terraform provider's attribute names. The two disagree often enough
-// that inferring one from the other is unsafe: creating a DNS record answers
-// with `uid` while listing records returns `id`, and a custom environment's
-// name is `slug` on the wire.
+// page: request-body property names come from the documented JSON schema and
+// nothing else. Names cannot be inferred, even within one resource — creating a
+// DNS record answers with `uid` while listing records returns `id`, and a custom
+// environment is `slug` on the wire, not `name`.
 //
 // Resources needing behaviour the engine does not model live elsewhere:
-// VERCEL::Projects::Project and ::EnvironmentVariable are hand-written in
-// pkg/resources/projects. See docs/RESOURCES.md for what is still missing and
-// why.
+// VERCEL::Projects::{Project, EnvironmentVariable, Route} are hand-written in
+// pkg/resources/projects.
 package defs
 
 import (
@@ -228,7 +226,7 @@ func network() rest.Definition {
 // `projects` and `membersToAdd` are accepted on create but the read response
 // only returns counts, so managing them here would drift on every sync. They
 // are modelled as their own resources instead (ProjectAssignment below, and
-// membership, which is still pending — see docs/RESOURCES.md).
+// membership, which is still pending).
 func accessGroup() rest.Definition {
 	return rest.Definition{
 		Type:           "VERCEL::AccessGroups::AccessGroup",
@@ -321,9 +319,7 @@ func vcrRepository() rest.Definition {
 //
 // This is the step that DNS::Record and Projects::Domain both presuppose:
 // records need a domain the account holds, and attaching a domain to a project
-// does not bring the domain itself under management. Terraform has no
-// equivalent resource, which is why this gap never showed up in the parity
-// matrix.
+// does not bring the domain itself under management.
 //
 // Addressed by name everywhere — GET /v5/domains/{domain},
 // DELETE /v6/domains/{domain} — so the native id is the domain name, not the
@@ -358,9 +354,8 @@ func domain() rest.Definition {
 // =============================================================================
 
 // certificate — POST /v8/certs issues a Vercel-managed certificate for a set
-// of common names. This is the *issue* endpoint; Terraform's
-// `vercel_custom_certificate` wraps the separate PUT upload flow, which takes
-// three PEM blobs and is still pending (see docs/RESOURCES.md).
+// of common names. This is the *issue* endpoint; uploading your own certificate
+// is the separate PUT flow, declared as VERCEL::Certs::UploadedCertificate.
 func certificate() rest.Definition {
 	return rest.Definition{
 		Type:           "VERCEL::Certs::Certificate",

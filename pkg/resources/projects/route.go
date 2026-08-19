@@ -85,11 +85,10 @@ type routeEnvelope struct {
 }
 
 // routeVersion is the staged version a write produces. Its id is what promote
-// needs; isLive says whether publishing already happened.
+// needs; isLive says publishing already happened and no promote is due.
 type routeVersion struct {
-	ID        string `json:"id"`
-	IsStaging bool   `json:"isStaging"`
-	IsLive    bool   `json:"isLive"`
+	ID     string `json:"id"`
+	IsLive bool   `json:"isLive"`
 }
 
 type routeList struct {
@@ -103,30 +102,12 @@ func routesPath(projectID string) string {
 // body builds the wire shape. `projectId` and `id` live in the path and the
 // native id, never in the body.
 func (r *RouteProperties) body() map[string]any {
-	route := map[string]any{"name": r.Name}
-	if r.Description != nil {
-		route["description"] = *r.Description
-	}
-	if r.Enabled != nil {
-		route["enabled"] = *r.Enabled
-	}
-	if r.SrcSyntax != nil {
-		route["srcSyntax"] = *r.SrcSyntax
-	}
-	if r.Route != nil {
-		match := map[string]any{"src": r.Route.Src}
-		if r.Route.Dest != nil {
-			match["dest"] = *r.Route.Dest
-		}
-		if r.Route.Status != nil {
-			match["status"] = *r.Route.Status
-		}
-		if r.Route.CaseSensitive != nil {
-			match["caseSensitive"] = *r.Route.CaseSensitive
-		}
-		route["route"] = match
-	}
-	return map[string]any{"route": route}
+	// Every optional field is omitempty, so the struct marshals to exactly the
+	// documented body. projectId lives in the path and id in the native id;
+	// neither belongs in the payload.
+	wire := *r
+	wire.ProjectID, wire.ID = "", ""
+	return map[string]any{"route": wire}
 }
 
 // promote publishes a staged version. A write that staged nothing (no version
@@ -306,25 +287,12 @@ func (p *Route) collection(ctx context.Context, projectID string) ([]RouteProper
 	return list.Routes, nil
 }
 
-// declared strips the response down to what the forma declares. The API also
-// returns rawSrc, rawDest, routeType and staged, none of which a forma sets;
-// reporting them would be drift on every sync.
+// declared is the response as the forma declares it. The API also returns
+// rawSrc, rawDest, routeType and staged; RouteProperties does not carry them, so
+// decoding already dropped them. Only the project needs restoring — it lives in
+// the native id, not in the payload.
 func (p *Route) declared(projectID string, got *RouteProperties) RouteProperties {
-	out := RouteProperties{
-		ProjectID:   projectID,
-		ID:          got.ID,
-		Name:        got.Name,
-		Description: got.Description,
-		Enabled:     got.Enabled,
-		SrcSyntax:   got.SrcSyntax,
-	}
-	if got.Route != nil {
-		out.Route = &Match{
-			Src:           got.Route.Src,
-			Dest:          got.Route.Dest,
-			Status:        got.Route.Status,
-			CaseSensitive: got.Route.CaseSensitive,
-		}
-	}
+	out := *got
+	out.ProjectID = projectID
 	return out
 }

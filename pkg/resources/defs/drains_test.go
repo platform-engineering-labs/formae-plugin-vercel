@@ -39,7 +39,7 @@ func drainProvisioner(t *testing.T, h http.HandlerFunc) *rest.Resource {
 	return rest.New(drain(), drainsClient(t, h), "")
 }
 
-// A log drain as vercel_log_drain would express it: schemas={"log":…},
+// A log drain: schemas={"log":…},
 // delivery.type=http, filter selecting sources and environments.
 func logDrainProperties() []byte {
 	return drainJSON(map[string]any{
@@ -133,7 +133,7 @@ func TestDrainCreate_PathAndBody(t *testing.T) {
 }
 
 // A trace drain differs only in schemas and delivery; the same definition must
-// carry it, since vercel_trace_drain is also POST /v1/drains.
+// carry it, since a trace drain is also POST /v1/drains.
 func TestDrainCreate_TraceDrainShape(t *testing.T) {
 	var body map[string]any
 	p := drainProvisioner(t, func(w http.ResponseWriter, r *http.Request) {
@@ -397,7 +397,7 @@ func TestDrainsGroupIsWellFormed(t *testing.T) {
 	}
 }
 
-// The three Terraform drain resources are all POST /v1/drains; what tells them
+// The three drain kinds are all POST /v1/drains; what tells them
 // apart is the `schemas` key. Losing any of these fields would silently drop a
 // whole drain kind.
 func TestDrainDeclaresTheFieldsAllThreeKindsNeed(t *testing.T) {

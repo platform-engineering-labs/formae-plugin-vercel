@@ -6,8 +6,7 @@
 
 /// Vercel REST API resource definitions.
 ///
-/// Only resources implemented by the plugin appear here. See docs/RESOURCES.md
-/// for the full catalog and the mapping to the official Terraform provider.
+/// Only resources implemented by the plugin appear here.
 module vercel
 
 import "@formae/formae.pkl"
@@ -68,9 +67,9 @@ open class ProjectResolvable extends formae.Resolvable {
 /// the documented `PATCH /v9/projects/{idOrName}` body carries no git link among
 /// its 44 properties. Changing either field replaces the project.
 ///
-/// Terraform's `git_repository` also carries `production_branch` and
-/// `deploy_hooks`. Neither is reachable through a documented endpoint, so both
-/// are out of scope here — see the won't-fix table in docs/RESOURCES.md.
+/// A production branch and deploy hooks are deliberately not modelled: neither
+/// is reachable through a documented endpoint, and this plugin uses only
+/// endpoints Vercel documents.
 class GitRepository {
     /// Git provider hosting the repository.
     @formae.FieldHint { createOnly = true; requiredOnCreate = true }
@@ -103,9 +102,8 @@ class Project extends formae.Resource {
     /// Project name. Lowercase alphanumerics and hyphens, max 100 characters.
     ///
     /// Immutable: `PATCH /v9/projects/{id}` does accept a new name, but a
-    /// rename rewrites every generated deployment URL. The official Terraform
-    /// provider marks it force-new for the same reason, and this plugin
-    /// follows it.
+    /// rename rewrites every generated deployment URL, so a change here
+    /// replaces the project rather than renaming it in place.
     @formae.FieldHint {
         createOnly = true
         requiredOnCreate = true
@@ -750,8 +748,7 @@ class Alias extends formae.Resource {
 ///
 /// This is the step both `VERCEL::DNS::Record` and `VERCEL::Projects::Domain`
 /// presuppose: records need a domain the account holds, and attaching a domain
-/// to a project does not bring the domain itself under management. The official
-/// Terraform provider has no equivalent resource.
+/// to a project does not bring the domain itself under management.
 ///
 /// Addressed by name on three different API versions — read is
 /// `GET /v5/domains/{domain}`, delete is `DELETE /v6/domains/{domain}` — so the

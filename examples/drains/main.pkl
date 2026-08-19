@@ -1,11 +1,9 @@
 /*
  * Observability drains.
  *
- * Terraform ships vercel_log_drain, vercel_trace_drain and
- * vercel_audit_log_drain as three resources. They are all the same endpoint —
- * POST /v1/drains — differing only in the `schemas` map and the delivery
- * transport. This plugin therefore has one type, VERCEL::Drains::Drain, and
- * you pick the shape.
+ * Log, trace and audit-log drains are all the same endpoint — POST /v1/drains —
+ * differing only in the `schemas` map and the delivery transport. This plugin
+ * therefore has one type, VERCEL::Drains::Drain, and you pick the shape.
  *
  *   formae apply --mode reconcile --watch examples/drains/main.pkl
  */
@@ -26,8 +24,7 @@ forma {
     config = new vercel.Config {}
   }
 
-  // Equivalent of Terraform's vercel_log_drain:
-  // schemas {log}, delivered over HTTP.
+  // A log drain: schemas {log}, delivered over HTTP.
   new drains.Drain {
     label = "log-drain"
     name = "ship-logs-to-collector"
@@ -45,8 +42,7 @@ forma {
     }
   }
 
-  // Equivalent of Terraform's vercel_trace_drain:
-  // schemas {trace}, delivered over OTLP/HTTP.
+  // A trace drain: schemas {trace}, delivered over OTLP/HTTP.
   new drains.Drain {
     label = "trace-drain"
     name = "ship-traces-to-collector"

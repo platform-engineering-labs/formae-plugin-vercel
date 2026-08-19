@@ -25,7 +25,7 @@ import (
 )
 
 // tokenEnvVars are read in order; the first non-empty one wins. VERCEL_TOKEN is
-// the Vercel CLI's name, VERCEL_API_TOKEN the official Terraform provider's.
+// the Vercel CLI's name; VERCEL_API_TOKEN is the other name in common use.
 var tokenEnvVars = []string{"VERCEL_TOKEN", "VERCEL_API_TOKEN"}
 
 // ErrNotImplemented is returned for resource types this plugin does not handle.
@@ -48,8 +48,9 @@ var _ plugin.ResourcePlugin = &Plugin{}
 // RateLimit caps requests across the whole namespace.
 //
 // Vercel's limits are per endpoint; the tightest one we touch is env-var
-// deletion at 60/minute. 5 rps across a mixed workload stays inside every
-// bucket while leaving room for bursts. See docs/RESOURCES.md.
+// deletion at 60/minute (1 rps). Buckets are per endpoint and not shared, so
+// 5 rps across a mixed workload stays inside every one of them while leaving
+// room for bursts.
 func (p *Plugin) RateLimit() model.RateLimitConfig {
 	return model.RateLimitConfig{
 		Scope:                            model.RateLimitScopeNamespace,

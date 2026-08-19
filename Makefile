@@ -110,8 +110,8 @@ clean-environment:
 ##
 ## Both phases always run, and the exit code is non-zero if either failed.
 ## Listing them as prerequisites would stop at the first failure — and since
-## some CRUD fixtures are deliberately kept red (see docs/RESOURCES.md), that
-## meant the discovery phase never ran at all.
+## some CRUD fixtures are deliberately kept red, that meant the discovery
+## phase never ran at all.
 conformance-test:
 	@$(MAKE) conformance-test-crud; crud=$$?; \
 	$(MAKE) conformance-test-discovery; disc=$$?; \
