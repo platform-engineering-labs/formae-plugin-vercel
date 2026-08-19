@@ -207,10 +207,20 @@ Conformance tests create and destroy real Vercel projects. They need:
 
 ### Conformance in CI
 
-The `conformance-tests` job runs nightly and on `workflow_dispatch`. It is
-deliberately **not** run on push or pull request: every run creates and destroys
-real Vercel resources, and a pull request from a fork has no credentials to do it
-with.
+The `conformance-tests` job runs on every push to `main`, on every pull request,
+nightly, and on `workflow_dispatch`. Every run creates and destroys real Vercel
+resources under the `formae-sdk-test` name prefix.
+
+A pull request from a fork gets no repository secrets, so the job logs a notice
+and exits 0 instead of failing on a missing token.
+
+Runs are **serialized repo-wide** through a `concurrency` group. Resource names
+carry `FORMAE_TEST_RUN_ID`, but `scripts/ci/clean-environment.sh` deletes
+everything matching the shared prefix, before and after each run — two concurrent
+runs would delete each other's live projects mid-apply. `cancel-in-progress` is
+deliberately `false`: cancelling mid-apply abandons real resources, whereas
+letting a run finish lets its own post-test cleanup remove them. Expect a queue
+of roughly 8 minutes per run when several land together.
 
 Set these under **Settings → Secrets and variables → Actions**:
 
