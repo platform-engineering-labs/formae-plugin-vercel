@@ -165,3 +165,28 @@ func TestRenamesAreConsistent(t *testing.T) {
 		}
 	}
 }
+
+// A domain is addressed by name on three different path versions, and the
+// object also carries a `dom_…` id that must not become the native id — a
+// native id of dom_… makes every subsequent GET 404.
+func TestDomain_IsAddressedByName(t *testing.T) {
+	var def *rest.Definition
+	for _, d := range All() {
+		if d.Type == "VERCEL::Domains::Domain" {
+			c := d
+			def = &c
+		}
+	}
+	if def == nil {
+		t.Fatal("VERCEL::Domains::Domain is not declared")
+	}
+	if def.IDField != "name" {
+		t.Errorf("IDField = %q, want name", def.IDField)
+	}
+	if def.ItemPath != "/v5/domains/{id}" || def.ItemPathDelete != "/v6/domains/{id}" {
+		t.Errorf("read and delete use different API versions: %q / %q", def.ItemPath, def.ItemPathDelete)
+	}
+	if !def.NoUpdate {
+		t.Error("PATCH /v3/domains is op-based with an empty 200; NoUpdate must be set")
+	}
+}

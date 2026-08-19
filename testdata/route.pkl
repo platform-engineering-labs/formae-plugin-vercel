@@ -1,0 +1,46 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::Projects::Route.
+//
+// Routing rules are free and project-scoped, so this fixture creates its own
+// throwaway project and a redirect on it.
+//
+// What this fixture proves, precisely: the promote call is accepted by the real
+// API. Create fails the operation when the promote fails, so a green fixture
+// means POST /routes/versions returned 2xx for a version this plugin staged.
+//
+// What it does not prove: that promotion is *necessary*. That a staged route
+// does not serve traffic comes from the endpoint's own documentation, not from
+// an experiment run here — GET /routes may well return staged rules too, in
+// which case Verify would pass without a promote. Testing the negative needs a
+// real request against a deployed project.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-route-project"
+  name = "\(v.prefix)-route-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new vercel.Route {
+    label = "plugin-sdk-test-route"
+    projectId = project.res.id
+    name = "sdk-redirect-\(v.shortID)"
+    description = "Plugin SDK conformance test redirect"
+    route = new vercel.RouteMatch {
+      src = "/sdk-test-old/:path*"
+      dest = "/sdk-test-new/:path*"
+      status = 308
+    }
+  }
+}

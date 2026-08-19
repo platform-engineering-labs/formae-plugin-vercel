@@ -14,7 +14,8 @@ Installs the binary, schema and manifest to `~/.pel/formae/plugins/vercel/v<vers
 
 ## Supported Resources
 
-19 resource types, covering 20 of the official Terraform provider's 50 resources.
+21 resource types, covering 21 of the official Terraform provider's 50 resources,
+plus one (`Domains::Domain`) the Terraform provider has no equivalent for.
 Each implements Create, Read, Update, Delete and List unless noted.
 
 | Resource Type | Notes |
@@ -23,7 +24,9 @@ Each implements Create, Read, Update, Delete and List unless noted.
 | `VERCEL::Projects::EnvironmentVariable` | Reference the project with `project.res.id`. |
 | `VERCEL::Projects::CustomEnvironment` | Named `slug` on the wire, not `name`. |
 | `VERCEL::Projects::Domain` | Keyed by the domain name. Custom domains need a paid plan. |
+| `VERCEL::Domains::Domain` | Registers a domain on the account — the prerequisite for `DNS::Record` and for attaching a domain to a project. No update (the API's PATCH is op-based); adding does not verify. |
 | `VERCEL::DNS::Record` | Record type is `recordType` here — `type` is reserved. |
+| `VERCEL::Projects::Route` | Redirects, rewrites and status rules. Every write stages a version and the plugin promotes it, so a rule is live when the apply succeeds. |
 | `VERCEL::GlobalConfig::Config` | Edge Config's new API name. `slug` is immutable, so changes replace. |
 | `VERCEL::Webhooks::Webhook` | No update endpoint; any change replaces. |
 | `VERCEL::Networking::Network` | **Asynchronous** — create polls until `status: ready`. |

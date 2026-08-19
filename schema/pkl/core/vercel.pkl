@@ -300,6 +300,84 @@ class CustomEnvironment extends formae.Resource {
 }
 
 // =============================================================================
+// VERCEL::Projects::Route
+// =============================================================================
+
+/// The match-and-act half of a routing rule — the wire nests this under
+/// `route.route`.
+@formae.SubResourceHint {}
+class RouteMatch extends formae.SubResource {
+    /// Path pattern to match, e.g. "/blog/:path*". Required.
+    @formae.FieldHint { requiredOnCreate = true }
+    src: String
+
+    /// Where to send matching requests. A redirect or rewrite needs one; a
+    /// status-only rule does not.
+    @formae.FieldHint {}
+    dest: String? = null
+
+    /// HTTP status to answer with. 308 for a permanent redirect, 307 for a
+    /// temporary one. Omit for a rewrite, which serves the destination without
+    /// changing the URL.
+    @formae.FieldHint {}
+    status: Int? = null
+
+    /// Whether `src` matches case-sensitively.
+    @formae.FieldHint { hasProviderDefault = true }
+    caseSensitive: Boolean? = null
+}
+
+/// A routing rule on a project: redirect, rewrite or status override.
+/// Maps to `POST /v1/projects/{projectId}/routes`.
+///
+/// **Every write stages a version and the plugin promotes it.** The API's own
+/// words for the create endpoint are "Stages a new version with the added
+/// route" — until a version is promoted the rule is not serving traffic. The
+/// plugin issues `POST /v1/projects/{projectId}/routes/versions` with
+/// `action: "promote"` after each create, update and delete, and fails the
+/// operation if that call fails. It never reports success for a rule that is
+/// only staged.
+///
+/// Not modelled, all optional in the API: `has` / `missing` (conditional
+/// matching on host, header, cookie or query), `transforms` (header and query
+/// rewriting), `headers`, `respectOriginCacheControl`, and `position` — new
+/// rules append to the end of the list. `routeType`, `rawSrc`, `rawDest` and
+/// `staged` are computed by Vercel and deliberately not reported as state.
+@formae.ResourceHint {
+    type = "VERCEL::Projects::Route"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class Route extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Projects::Route"
+
+    /// Owning project id. Immutable — a rule cannot move between projects.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// Human-readable rule name, max 256 characters.
+    @formae.FieldHint { requiredOnCreate = true }
+    name: String
+
+    /// Optional description, max 1024 characters.
+    @formae.FieldHint {}
+    description: String? = null
+
+    /// Whether the rule is active. Vercel defaults it to true.
+    @formae.FieldHint { hasProviderDefault = true }
+    enabled: Boolean? = null
+
+    /// How `src` is interpreted. Vercel infers it from the pattern when unset.
+    @formae.FieldHint { hasProviderDefault = true }
+    srcSyntax: ("equals"|"path-to-regexp"|"regex")? = null
+
+    /// The rule itself.
+    @formae.FieldHint { requiredOnCreate = true }
+    route: RouteMatch
+}
+
+// =============================================================================
 // VERCEL::Projects::Domain
 // =============================================================================
 
@@ -661,4 +739,55 @@ class Alias extends formae.Resource {
     /// deployment. Immutable.
     @formae.FieldHint { createOnly = true }
     redirect: String? = null
+}
+
+// =============================================================================
+// VERCEL::Domains::Domain
+// =============================================================================
+
+/// A domain registered on the account or team.
+/// Maps to `POST /v7/domains`.
+///
+/// This is the step both `VERCEL::DNS::Record` and `VERCEL::Projects::Domain`
+/// presuppose: records need a domain the account holds, and attaching a domain
+/// to a project does not bring the domain itself under management. The official
+/// Terraform provider has no equivalent resource.
+///
+/// Addressed by name on three different API versions — read is
+/// `GET /v5/domains/{domain}`, delete is `DELETE /v6/domains/{domain}` — so the
+/// native id is the name, not the `dom_…` id the object also carries.
+///
+/// There is no update. `PATCH /v3/domains/{domain}` is op-based, its `op`
+/// values are not enumerated in the spec, and its 200 has no response body;
+/// nothing there can be driven declaratively. Everything the domain object
+/// reports beyond its name — nameservers, verification state, expiry — is
+/// Vercel's to decide, so none of it is modelled as forma state.
+///
+/// Adding a domain does not verify it. Point the registrar at Vercel's
+/// `intendedNameservers`, or add the TXT record Vercel asks for, before
+/// expecting a project domain on it to serve traffic.
+@formae.ResourceHint {
+    type = "VERCEL::Domains::Domain"
+    identifier = "$.name"
+    discoverable = true
+}
+class Domain extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Domains::Domain"
+
+    local parent = this
+    hidden res: DomainResolvable = new {
+        label = parent.label
+        stack = parent.stack?.label
+    }
+
+    /// Fully-qualified domain name, e.g. "example.com". Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    name: String
+}
+
+/// Reference a domain's name from another resource, e.g. a DNS record.
+open class DomainResolvable extends formae.Resolvable {
+    hidden type = "VERCEL::Domains::Domain"
+
+    hidden name: DomainResolvable = (this) { property = "name" }
 }

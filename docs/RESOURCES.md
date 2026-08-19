@@ -112,14 +112,16 @@ config = new vercel.Config {
 ## Parity matrix — all 50 Terraform provider resources
 
 The goal is 1:1 coverage of `vercel/terraform-provider-vercel`. Status
-re-counted against the registered types on 2026-08-14: rows 13 and 18–20 had
-been implemented without their status being updated here.
+re-counted against the registered types on 2026-08-19.
 
-**Implemented: 20 / 50 Terraform resources**, as 19 formae types.
+**Implemented: 21 / 50 Terraform resources**, as 21 formae types.
 
 The counts differ in both directions: `VERCEL::Certs::Certificate` wraps the cert
-*issue* flow, which Terraform has no equivalent for; and `VERCEL::Drains::Drain`
-covers three Terraform resources at once (see below).
+*issue* flow, which Terraform has no equivalent for; `VERCEL::Drains::Drain`
+covers three Terraform resources at once (see below); and
+`VERCEL::Domains::Domain` is **outside this matrix entirely** — Terraform ships
+no `vercel_domain`, so registering a domain on the account appears nowhere in a
+parity count. See "Beyond the Terraform surface" below.
 
 Legend — **done**: implemented and unit-tested · **engine**: fits
 `pkg/resources/rest`, needs its API request body confirmed and then declared ·
@@ -143,7 +145,7 @@ Legend — **done**: implemented and unit-tested · **engine**: fits
 | 13 | `vercel_custom_certificate` | `VERCEL::Certs::UploadedCertificate` | **done** (engine) — `PUT /v8/certs`, three PEM blobs, all createOnly. Discovery is off: `GET /v8/certs` returns issued and uploaded certs in one list and `Certs::Certificate` already discovers it |
 | 14 | `vercel_blob_store` | `VERCEL::Storage::BlobStore` | engine; no documented list endpoint, so discovery may be impossible |
 | 15 | `vercel_alias` | `VERCEL::Deployments::Alias` | **done** (engine) — deployment is a create-time path input, not part of the native id |
-| 16 | `vercel_project_route` | `VERCEL::Projects::Route` | engine; `route` is a nested block and `position` is create-time only |
+| 16 | `vercel_project_route` | `VERCEL::Projects::Route` | **done** (hand-written) — every write only *stages* a version; the plugin promotes it. See below. |
 | 17 | `vercel_project_members` | `VERCEL::Projects::Member` | engine (id = uid), `NoUpdate` |
 | 18 | `vercel_feature_flag_definition` | `VERCEL::FeatureFlags::Flag` | **done** (engine) — `CreateMethod: PUT` |
 | 19 | `vercel_feature_flag_segment` | `VERCEL::FeatureFlags::Segment` | **done** (engine) — `CreateMethod: PUT` |
@@ -185,12 +187,12 @@ REST API this plugin talks to.
 
 ### Remaining work, by kind
 
-- **12 engine-fit** left (#14, #16, #17, #24–#29): each needs its request body
+- **11 engine-fit** left (#14, #17, #24–#29): each needs its request body
   confirmed against its own API reference page, then a `rest.Definition` and a
   PKL class. Five of them (#14, #24, #25, #26, #29) point at endpoints that are
   not publicly documented and are won't-fix under the scope policy below, which
-  leaves **7 genuinely declarable** (#16, #17, #27, #28 and the three still-open
-  rows named further down).
+  leaves **6 genuinely declarable**. #16 has left this bucket: it turned out not
+  to fit the engine at all (staging, below).
 - **20 custom** (#30–#49): each needs hand-written Go, because the API shape is
   a bag, a singleton, a toggle, or a verb pair rather than CRUD on an id. All are
   now *expressible* by the engine; none are declared.
@@ -268,12 +270,12 @@ id without guessing.
 
 ### Conformance coverage
 
-Ten resource types have fixtures. **Five fail, deliberately kept red** — a
+Eleven resource types have fixtures. **Five fail, deliberately kept red** — a
 removed test hides a gap, a red one names it. `make conformance-test` therefore
 exits non-zero on this account; that is the intended signal, not a broken build.
 
-Last run 2026-08-14: **CRUD 5 passed / 5 failed · discovery 5 passed / 5
-failed**. The same five resources fail in both phases, all at Create — a
+Runs of 2026-08-14 and 2026-08-19: **6 passed / 5 failed**, in both the CRUD and
+the discovery phase. The same five resources fail in both, all at Create — a
 resource that cannot be created cannot be discovered either.
 
 This was the **first run in which the discovery phase executed at all**.
@@ -289,6 +291,7 @@ discovery run found a real defect immediately (VCR, below).
 | `globalconfig` | ✅ full | no Update (the API has none) |
 | `webhook` | ✅ full | no Update (the API has none) |
 | `vcrrepository` | ✅ full | CRUD and discovery both fixed — see below. No Update (the API has none). |
+| `route` | ✅ full | Added 2026-08-19. Green on first run, CRUD and discovery. Proves the promote call is accepted by the live API; see the note on what it does not prove. |
 | `customenv` | ❌ plan | `400 Cannot create more than 0 custom environments` |
 | `drain` | ❌ plan | `403 Drains are not available for team <id>` |
 | `accessgroup` | ❌ token scope | `403 You don't have permission to create the access group` |
@@ -299,7 +302,8 @@ Only one of the five is ours now: `featureflag` (undiagnosed). The other four
 are account capability or token scope and should go green on a plan and token
 that allow them.
 
-Nine types still have no fixture at all: `Projects::Domain`, `DNS::Record`,
+Ten types still have no fixture at all: `Domains::Domain` (would have to
+register a real domain — see above), `Projects::Domain`, `DNS::Record`,
 `Certs::Certificate`, `Certs::UploadedCertificate` (all need an apex domain the
 account owns), `Deployments::Alias` (needs a real deployment — build minutes),
 `Networking::Network` (Secure Compute — billable), `AccessGroups::ProjectAssignment`
@@ -365,6 +369,67 @@ harness then fails a fixture with `failed to start agent: timeout waiting for
 agent to become ready after 30s` (preceded by `no available ports in range
 65535..65535`). No Vercel call is involved. `vcrrepository` failed this way in
 one run and passed on its own immediately before and after.
+
+### Beyond the Terraform surface: `VERCEL::Domains::Domain`
+
+`POST /v7/domains` registers a domain on the account or team. Nothing in the
+Terraform provider does this — its 51 resources cover `dns_record`,
+`project_domain`, `bulk_redirects` and `project_route`, and stop there.
+
+That mattered because the two domain resources we *did* have both presuppose a
+registered domain: `DNS::Record` writes records under a domain the account
+holds, and `Projects::Domain` attaches an existing domain to a project. Neither
+can bring the domain itself under management, so a user had to click that step
+in the dashboard and then declare records against it. **A parity-driven scope
+has a blind spot exactly where Terraform is also weak** — this gap was
+catalogued as P2 in this document and then invisible in every count taken since,
+because the count was 20-of-50.
+
+Addressed by name across three API versions (create `/v7`, read `/v5`, delete
+`/v6`), so the native id is the domain name, not the `dom_…` id the object also
+carries — `IDField: "name"`.
+
+`NoUpdate` is deliberate: `PATCH /v3/domains/{domain}` is op-based
+(`{op, zone, renew, customNameservers}` or `{op, destination}` to move a domain
+out), the `op` values are not enumerated in the spec, and the 200 carries no
+response body. Only `name` is modelled and it is createOnly, so there is nothing
+an update could send. Everything else the object reports — nameservers,
+`verified`, `expiresAt` — is Vercel's to decide, not the forma's.
+
+**No conformance fixture, on purpose.** A fixture would have to register a real
+domain on the account under test. Adding a domain nobody owns is not a test, and
+`clean-environment.sh` deleting domains by prefix is not a safety property worth
+having. Unit-tested only.
+
+### Why `Projects::Route` is hand-written
+
+`vercel_project_route` was catalogued as engine-fit. It is not, and the reason is
+worth recording because it is the same failure class as the VCR list defect:
+
+> `POST /v1/projects/{projectId}/routes` — "Add a single routing rule to a
+> project at a specified position. … **Stages a new version with the added
+> route.**"
+
+A staged route is not serving traffic. Publishing is a second call,
+`POST /v1/projects/{projectId}/routes/versions` with
+`{id, action: "promote"}`. A plain `rest.Definition` would have issued the first
+call, received a 200, and reported Success for a redirect that never took
+effect — a green apply over unchanged production.
+
+Create, Update and Delete each promote the version they staged, and each **fails
+the operation if the promote fails**, naming the staged rule in the message. A
+version that already reports `isLive` is not promoted again.
+
+The rest of the shape does not fit the engine either: there is no per-route GET
+(Read scans the collection), delete is a bulk `DELETE` on the *collection* with
+`{routeIds: […]}` in the body, and update is a whole-object `PATCH` on an item
+path that supports no other verb.
+
+Not modelled, all optional in the API: `has` / `missing` (conditional matching
+on host, header, cookie, query), `transforms` (header and query rewriting),
+`headers`, `respectOriginCacheControl`, and `position` — new rules append to the
+end of the list. `routeType`, `rawSrc`, `rawDest` and `staged` are computed by
+Vercel and deliberately not reported as state.
 
 ### Known engine limitation
 
