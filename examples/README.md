@@ -15,6 +15,7 @@ formae apply --mode reconcile --watch examples/basic/main.pkl
 | [`full-stack/`](full-stack/) | A whole project from one apply: custom environment, three flavours of environment variable, a Global Config store and a webhook, wired together with `site.res.id` | No. Global Config *writes* are metered on paid plans; creating the store is not |
 | [`dns/`](dns/) | A domain attached to a project, an apex redirect, and A / MX / TXT records | Custom domains need a paid plan — Hobby answers `custom_domain_needs_upgrade` |
 | [`drains/`](drains/) | Log and trace drains — one formae type covering all three drain kinds | Drains are billed per GB delivered |
+| [`supabase-vercel/`](supabase-vercel/) | A Supabase database and a Vercel frontend in one forma — the API key is created and handed to Vercel in the same apply | Needs both plugins installed and the two repos side by side; a Supabase project is a real database |
 
 All of them evaluate offline with `pkl eval`, and all pass a live
 `--simulate` against a running agent:

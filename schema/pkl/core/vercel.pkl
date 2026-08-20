@@ -215,7 +215,7 @@ class EnvironmentVariable extends formae.Resource {
     /// be a formae-managed secret; formae resolves it to a plain string before
     /// the plugin sees it.
     @formae.FieldHint { requiredOnCreate = true }
-    value: (formae.Value|String)
+    value: (formae.Value|String|formae.Resolvable)
 
     /// Storage type. Named `variableType` rather than `type` because
     /// `formae.Resource` already reserves `type`. Defaults to `encrypted`,

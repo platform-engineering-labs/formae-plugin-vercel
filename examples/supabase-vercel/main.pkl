@@ -1,0 +1,132 @@
+/*
+ * A frontend on Vercel talking to a database on Supabase, as one forma.
+ *
+ * This is the case two plugins exist to serve: the Supabase project and its API
+ * key are created first, and the key is handed to Vercel as an environment
+ * variable in the same apply. No copy-paste between two dashboards, and no
+ * "create the database, then go find the key" step in a runbook.
+ *
+ * The wiring is a resolvable: `anonKey.res.apiKey` is a handle, not a value.
+ * formae orders the graph from it — the Supabase key is created before the
+ * Vercel variable that consumes it — and substitutes the real value at apply
+ * time, so the secret never appears in this file or in the state formae keeps
+ * for the Vercel side.
+ *
+ *   formae apply --mode reconcile --watch examples/supabase-vercel/main.pkl
+ *
+ * Requires credentials for both providers:
+ *
+ *   export VERCEL_TOKEN=...          # vercel.com/account/settings/tokens
+ *   export SUPABASE_ACCESS_TOKEN=... # supabase.com/dashboard/account/tokens
+ *
+ * and both plugins installed:
+ *
+ *   (cd ../../..  && cd formae-plugin-vercel   && make install)
+ *   (cd ../../..  && cd formae-plugin-supabase && make install)
+ *
+ * Note this one costs something to run: a Supabase project is a real database.
+ * The free plan allows two per organisation, and `plan = "free"` keeps it there.
+ */
+amends "@formae/forma.pkl"
+
+import "@formae/formae.pkl"
+import "@formae/ext/random.pkl"
+import "@vercel/core/vercel.pkl"
+import "@supabase/supabase.pkl"
+
+// ---------------------------------------------------------------------------
+// Supabase: the database, and a publishable key for the browser
+// ---------------------------------------------------------------------------
+
+local db = new supabase.Project {
+  label = "app-database"
+  name = "app-database"
+
+  // Both are account-specific: take the organisation id from
+  // supabase.com/dashboard/org/_/general and pick a region near your users.
+  organizationId = "your-org-id"
+  region = "eu-central-1"
+
+  // Never a literal. `setOnce` generates it on first apply and keeps it out of
+  // the forma; `opaque` keeps it out of logs and diffs.
+  dbPass = formae.value(random.password(32, false)).opaque.setOnce
+
+  plan = "free"
+}
+
+local anonKey = new supabase.APIKey {
+  label = "app-anon-key"
+  projectRef = db.res.id
+
+  // "publishable" is the browser-safe key. A "secret" key must never reach a
+  // NEXT_PUBLIC_ variable — Vercel exposes those to the client bundle.
+  apikey_type = "publishable"
+  name = "vercel_frontend"
+  description = "Read key for the Vercel frontend"
+}
+
+// ---------------------------------------------------------------------------
+// Vercel: the frontend, wired to the database above
+// ---------------------------------------------------------------------------
+
+local site = new vercel.Project {
+  label = "app-frontend"
+  name = "app-frontend"
+  framework = "nextjs"
+
+  // Uncomment to have pushes deploy automatically. Immutable once set:
+  // changing it replaces the project.
+  //
+  // gitRepository = new vercel.GitRepository {
+  //   type = "github"
+  //   repo = "your-org/your-app"
+  // }
+}
+
+forma {
+  new formae.Stack {
+    label = "default"
+    description = "Supabase database and Vercel frontend, wired together"
+  }
+
+  // One target per namespace. Each plugin reads its own credentials from the
+  // environment; neither token appears here.
+  new formae.Target {
+    label = "vercel"
+    config = new vercel.Config {}
+  }
+
+  new formae.Target {
+    label = "supabase"
+    config = new supabase.Config {}
+  }
+
+  db
+  anonKey
+  site
+
+  // The project reference, so the app can build its own API URL
+  // (https://<ref>.supabase.co). Kept as the reference rather than a
+  // concatenated URL because a resolvable is a handle: it cannot be
+  // interpolated into a string here, only passed as a whole value.
+  new vercel.EnvironmentVariable {
+    label = "supabase-project-ref"
+    projectId = site.res.id
+    key = "NEXT_PUBLIC_SUPABASE_PROJECT_REF"
+    value = db.res.id
+    variableType = "plain"
+    targets = new Listing { "production"; "preview"; "development" }
+  }
+
+  // The key itself. `encrypted` round-trips through the Vercel API, so formae
+  // sees no drift on later syncs; `sensitive` would never be readable again and
+  // would drift on every one.
+  new vercel.EnvironmentVariable {
+    label = "supabase-anon-key"
+    projectId = site.res.id
+    key = "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+    value = anonKey.res.apiKey
+    variableType = "encrypted"
+    targets = new Listing { "production"; "preview"; "development" }
+  }
+}

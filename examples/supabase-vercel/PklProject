@@ -1,0 +1,18 @@
+amends "pkl:Project"
+
+dependencies {
+  // Both plugin schemas are referenced from local checkouts, because neither is
+  // published to the pkl registry yet. This example therefore needs the two
+  // repositories side by side:
+  //
+  //   plugins/
+  //   ├── formae-plugin-vercel      <- you are here
+  //   └── formae-plugin-supabase
+  //
+  ["vercel"] = import("../../schema/pkl/PklProject")
+  ["supabase"] = import("../../../formae-plugin-supabase/schema/pkl/PklProject")
+
+  ["formae"] {
+    uri = "package://hub.platform.engineering/plugins/pkl/schema/pkl/formae/formae@0.89.0"
+  }
+}
