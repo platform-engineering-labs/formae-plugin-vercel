@@ -217,6 +217,21 @@ resources under the `formae-sdk-test` name prefix.
 A pull request from a fork gets no repository secrets, so the job logs a notice
 and exits 0 instead of failing on a missing token.
 
+### Discovery reliability
+
+`List` distinguishes three outcomes rather than two, because "no resources" is
+an answer formae acts on:
+
+| Outcome | Behaviour |
+|---|---|
+| 401 / 403 / 404 | An empty list. A token scoped away from a resource type genuinely sees none, and one such type must not stop the other twenty-two being discovered. |
+| 429 / 5xx / connection failure | Retried with backoff (4 attempts, ~7s), then **failed**. Reporting an empty list here is how formae comes to believe managed resources were deleted. |
+| Success | Every page. Collections that paginate declare the cursor parameter their endpoint uses (`PageParam`), and the engine follows `pagination.next` to the end. |
+
+Discovery is the one place the plugin retries on its own: every write goes
+through the agent's operator, which has its own retry loop, but `List` is called
+straight from the scan loop with nothing above it to try again.
+
 Runs are **serialized repo-wide** through a `concurrency` group. Resource names
 carry `FORMAE_TEST_RUN_ID`, but `scripts/ci/clean-environment.sh` deletes
 everything matching the shared prefix, before and after each run — two concurrent

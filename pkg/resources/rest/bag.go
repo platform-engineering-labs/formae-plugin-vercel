@@ -170,7 +170,7 @@ func (r *Resource) bagWrite(ctx context.Context, parent string, entries []map[st
 // bagCurrent reads the set the API currently holds.
 func (r *Resource) bagCurrent(ctx context.Context, parent string) (map[string]any, error) {
 	spec := r.def.Bag
-	items, err := fetchList(ctx, r.client, path(r.def.bagReadPath(), parent, ""), r.def.ListField, r.def.Query)
+	items, err := getPaged(ctx, r.client, path(r.def.bagReadPath(), parent, ""), r.def.ListField, r.def.PageParam, r.def.Query)
 	if err != nil {
 		return nil, err
 	}

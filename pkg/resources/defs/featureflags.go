@@ -61,6 +61,9 @@ func flag() rest.Definition {
 		BodyHook:       ensureEnvironmentRules,
 		ReadHook:       dropEnvironmentRevisions,
 		ListField:      "data",
+		// Flags and segments page with `?cursor=`; without this the engine
+		// saw the first page only.
+		PageParam: "cursor",
 		Fields: []string{
 			"slug", "kind", "variants", "environments",
 			"description", "state", "maintainerIds", "permanent", "tags",
@@ -94,9 +97,12 @@ func flagSegment() rest.Definition {
 		ItemPath:       "/v1/projects/{parent}/feature-flags/segments/{id}",
 		CreateMethod:   "PUT",
 		ListField:      "data",
-		Fields:         []string{"slug", "segmentLabel", "description", "data", "hint"},
-		Rename:         map[string]string{"segmentLabel": "label"},
-		CreateOnly:     []string{"slug"},
+		// Flags and segments page with `?cursor=`; without this the engine
+		// saw the first page only.
+		PageParam:  "cursor",
+		Fields:     []string{"slug", "segmentLabel", "description", "data", "hint"},
+		Rename:     map[string]string{"segmentLabel": "label"},
+		CreateOnly: []string{"slug"},
 	}
 }
 

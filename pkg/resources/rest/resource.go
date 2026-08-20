@@ -500,12 +500,17 @@ func (r *Resource) Status(ctx context.Context, req *resource.StatusRequest) (*re
 func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource.ListResult, error) {
 	parents, err := r.parents(ctx)
 	if err != nil {
-		// A single resource type the token cannot read must not abort
-		// discovery of the other eighteen. Tokens are routinely scoped so that
-		// e.g. access groups are forbidden while projects are fine; returning
-		// an error here made one 403 sink the whole namespace. Credential
-		// problems are caught earlier, at dispatch, where they belong.
-		return &resource.ListResult{NativeIDs: []string{}}, nil
+		// A 401/403/404 is an answer, not a failure: a token scoped away from
+		// access groups genuinely sees none, and one such type must not sink
+		// discovery of the other twenty-two.
+		if vercelapi.IsPermissionDenied(err) || vercelapi.IsNotFound(err) {
+			return &resource.ListResult{NativeIDs: []string{}}, nil
+		}
+		// Anything else — a throttle that outlasted the retries, a 502, a
+		// connection reset — is not an empty account, and reporting it as one
+		// is how formae comes to believe managed resources were deleted. Fail
+		// loudly and let the next scan try again.
+		return nil, fmt.Errorf("%s: enumerating parents: %w", r.def.Type, err)
 	}
 
 	nativeIDs := []string{}
@@ -525,8 +530,13 @@ func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource
 	for _, parent := range parents {
 		items, err := r.collection(ctx, parent)
 		if err != nil {
-			// One unreadable parent must not abort discovery of the rest.
-			continue
+			// One parent the token cannot see must not hide the rest.
+			if vercelapi.IsPermissionDenied(err) || vercelapi.IsNotFound(err) {
+				continue
+			}
+			// A transient failure is different: skipping the parent would
+			// under-report resources that do exist under it.
+			return nil, fmt.Errorf("%s: listing under %s: %w", r.def.Type, parent, err)
 		}
 		for _, item := range items {
 			if id := r.idOf(item); id != "" {
@@ -559,7 +569,7 @@ func (r *Resource) parentCollection(ctx context.Context) ([]string, error) {
 	if r.def.ParentListPath == "" {
 		return nil, fmt.Errorf("%s: no ParentListPath, cannot enumerate parents", r.def.Type)
 	}
-	items, err := fetchList(ctx, r.client, r.def.ParentListPath, r.def.ParentListField, nil)
+	items, err := getPaged(ctx, r.client, r.def.ParentListPath, r.def.ParentListField, r.def.PageParam, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -576,7 +586,7 @@ func (r *Resource) parentCollection(ctx context.Context) ([]string, error) {
 
 func (r *Resource) collection(ctx context.Context, parent string) ([]props, error) {
 	p, _ := r.def.listPath()
-	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.listQuery(parent))
+	return getPaged(ctx, r.client, path(p, parent, ""), r.def.ListField, r.def.PageParam, r.listQuery(parent))
 }
 
 // listQuery is Query plus any ListQuery parameters resolved against the parent
@@ -604,28 +614,34 @@ func (r *Resource) readCollection(ctx context.Context, parent string) ([]props, 
 	if flat {
 		p = r.def.CollectionPath
 	}
-	return fetchList(ctx, r.client, path(p, parent, ""), r.def.ListField, r.listQuery(parent))
+	return getPaged(ctx, r.client, path(p, parent, ""), r.def.ListField, r.def.PageParam, r.listQuery(parent))
 }
 
 // fetchList GETs a collection and normalises the two shapes Vercel uses: a
 // bare array, or an object with the array under a named key.
-func fetchList(ctx context.Context, c *vercelapi.Client, p, field string, query map[string]string) ([]props, error) {
-	var raw json.RawMessage
-	if err := c.Do(ctx, vercelapi.Request{Method: "GET", Path: p, Query: query}, &raw); err != nil {
-		return nil, err
+func fetchListPage(ctx context.Context, c *vercelapi.Client, p, field string, query map[string]string) ([]props, string, error) {
+	raw, err := withListRetry(ctx, "GET "+p, func() (json.RawMessage, error) {
+		var out json.RawMessage
+		err := c.Do(ctx, vercelapi.Request{Method: "GET", Path: p, Query: query}, &out)
+		return out, err
+	})
+	if err != nil {
+		return nil, "", err
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) > 0 && trimmed[0] == '[' {
+		// A bare array carries no pagination envelope.
 		var items []props
 		if err := json.Unmarshal(trimmed, &items); err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return items, nil
+		return items, "", nil
 	}
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &envelope); err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	next := nextCursor(envelope)
 	inner, ok := envelope[field]
 	if !ok {
 		// Several Vercel collection endpoints are documented only as "an
@@ -633,21 +649,40 @@ func fetchList(ctx context.Context, c *vercelapi.Client, p, field string, query 
 		// the caller guess it. Ambiguity is an error, not a coin flip.
 		var found string
 		for k, v := range envelope {
+			if k == "pagination" {
+				continue
+			}
 			if len(bytes.TrimSpace(v)) > 0 && bytes.TrimSpace(v)[0] == '[' {
 				if found != "" {
-					return nil, fmt.Errorf("%s: several array fields (%s, %s), set ListField", p, found, k)
+					return nil, "", fmt.Errorf("%s: several array fields (%s, %s), set ListField", p, found, k)
 				}
 				found = k
 			}
 		}
 		if found == "" {
-			return nil, nil
+			return nil, next, nil
 		}
 		inner = envelope[found]
 	}
 	var items []props
 	if err := json.Unmarshal(inner, &items); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return items, nil
+	return items, next, nil
+}
+
+// nextCursor reads Vercel's continuation token, which is always
+// `pagination.next` and is null on the last page.
+func nextCursor(envelope map[string]json.RawMessage) string {
+	rawPage, ok := envelope["pagination"]
+	if !ok {
+		return ""
+	}
+	var page struct {
+		Next *string `json:"next"`
+	}
+	if err := json.Unmarshal(rawPage, &page); err != nil || page.Next == nil {
+		return ""
+	}
+	return *page.Next
 }

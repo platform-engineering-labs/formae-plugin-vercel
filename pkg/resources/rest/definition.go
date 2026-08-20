@@ -117,6 +117,19 @@ type Definition struct {
 	// empty means the response is a bare array.
 	ListField string
 
+	// PageParam is the query parameter that carries Vercel's
+	// `pagination.next` cursor back to the endpoint, for collections that
+	// paginate. The name differs per endpoint and cannot be guessed: feature
+	// flags and segments take `cursor`, the project list takes `from`, and the
+	// domain list pages by `since`/`until` timestamps instead of a cursor and so
+	// declares nothing here.
+	//
+	// Empty means the collection is read in a single pass. That is correct for
+	// the endpoints with no pagination envelope at all (drains, webhooks), and
+	// it is what the engine did for every resource before this field existed —
+	// which silently truncated any collection that did paginate.
+	PageParam string
+
 	// ListPath overrides CollectionPath for List. Aliases are created under a
 	// deployment but enumerated account-wide from /v4/aliases; when ListPath
 	// has no {parent} placeholder, List makes a single flat pass instead of

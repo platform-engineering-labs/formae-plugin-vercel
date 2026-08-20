@@ -5,8 +5,10 @@
 package vercel
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/platform-engineering-labs/formae/pkg/plugin/resource"
@@ -93,4 +95,35 @@ func ClassifyError(err error) resource.OperationErrorCode {
 		return resource.OperationErrorCodeNotFound
 	}
 	return ClassifyStatus(apiErr.StatusCode)
+}
+
+// IsRetryable reports whether an error is worth trying again unchanged: a
+// throttle or a server-side fault, never a 4xx that names something wrong with
+// the request.
+//
+// This matters most in discovery. Discovery is not wrapped by the agent's
+// operator retry loop, so a transient 429 reaches the scan loop directly — and a
+// List that answers "no resources" because of a throttle is indistinguishable
+// from an account that genuinely has none. That is how formae concludes managed
+// resources were deleted.
+func IsRetryable(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		// Transport-level failures — connection reset, timeout, DNS — arrive as
+		// plain errors and are exactly the retryable kind.
+		return !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+	}
+	return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+}
+
+// IsPermissionDenied reports a 401/403. For discovery this is a real answer, not
+// a failure: a token scoped away from access groups genuinely cannot see any, so
+// the honest result is an empty list for that type rather than an error that
+// stops the scan.
+func IsPermissionDenied(err error) bool {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == http.StatusUnauthorized || apiErr.StatusCode == http.StatusForbidden
 }
