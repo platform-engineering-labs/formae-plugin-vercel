@@ -230,11 +230,16 @@ Set these under **Settings → Secrets and variables → Actions**:
 | `VERCEL_TOKEN` | yes | Without it the job logs a notice and exits 0 rather than failing confusingly |
 | `VERCEL_TEAM_ID` | no | Run against a team instead of the token's personal account |
 
-The job runs a **filtered set of fixtures** by default —
-`project,envvar,globalconfig,webhook,vcrrepository,route` — because five of the
-eleven are kept deliberately red for capabilities a token or plan may not have,
-and a job that always fails is a job nobody reads. Dispatch with `test_filter`
-emptied to run all eleven and see the full picture.
+The job runs a **filtered set of fixtures** by default — the eight that pass on
+an account with the capabilities they need. The remaining three
+(`accessgroup`, `authtoken`, `drain`) fail with a `403` from the plan or the
+token's scope, and a job that always fails is a job nobody reads. Dispatch with
+`test_filter` emptied to run all eleven and see the full picture.
+
+Treat that filter with suspicion, though. Two fixtures sat outside it as
+"account capability" failures and were in fact plugin bugs — the filter hid
+them exactly as deleting them would have. Re-run the excluded ones against the
+API before believing the reason given for any of them.
 
 Use literal fixture names in `test_filter`, comma separated. The harness also
 accepts a `/regex/` form, but `TEST` passes through `make`, which treats a bare

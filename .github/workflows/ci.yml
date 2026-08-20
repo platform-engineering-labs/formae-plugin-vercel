@@ -28,7 +28,7 @@ on:
           TEST goes through make, which eats a bare $ and would silently turn
           an anchored /…$/ pattern into one that matches nothing.'
         required: false
-        default: 'project,envvar,globalconfig,webhook,vcrrepository,route'
+        default: 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag'
         type: string
 
 jobs:
@@ -211,7 +211,7 @@ jobs:
           # The harness parses FORMAE_VERSION with semver and rejects "latest",
           # so that value must never reach it.
           REQUESTED_VERSION: ${{ inputs.formae_version || matrix.formae_version }}
-          TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route' }}
+          TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag' }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::notice title=Conformance skipped::VERCEL_TOKEN is not set on this repository. Add it under Settings -> Secrets and variables -> Actions."
