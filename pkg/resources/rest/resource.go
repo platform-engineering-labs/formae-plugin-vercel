@@ -147,7 +147,12 @@ func (r *Resource) body(p props, forUpdate bool) map[string]any {
 			continue
 		}
 		v, ok := p[field]
-		if !ok {
+		// A null is not a value here. formae renders an optional field the
+		// forma never set as an explicit null, and these endpoints spell
+		// "absent" by omission — sending null earns a 400 naming the field's
+		// expected type. stripNulls below handles nulls *inside* objects and
+		// arrays; this handles the field itself.
+		if !ok || v == nil {
 			continue
 		}
 		if r.def.Wrap != "" && !r.def.isWrapExcluded(field) {
@@ -159,6 +164,9 @@ func (r *Resource) body(p props, forUpdate bool) map[string]any {
 
 	if len(wrapped) > 0 {
 		out[r.def.Wrap] = wrapped
+	}
+	if r.def.BodyHook != nil {
+		r.def.BodyHook(out)
 	}
 	return out
 }
@@ -216,6 +224,9 @@ func (r *Resource) toProperties(raw props, parent string) props {
 	}
 	if r.def.Scope != ScopeAccount && parent != "" {
 		out[r.def.ParentProperty] = parent
+	}
+	if r.def.ReadHook != nil {
+		r.def.ReadHook(out)
 	}
 	return out
 }

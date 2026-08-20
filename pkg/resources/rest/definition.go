@@ -196,6 +196,34 @@ type Definition struct {
 	// write would put the placeholder itself on the wire.
 	ListQuery map[string]string
 
+	// BodyHook gets the assembled request body just before it is sent, for the
+	// one thing a declarative Definition cannot express: a key the endpoint
+	// requires to be *present* even when it is empty.
+	//
+	// formae elides empty collections on the way to the plugin — a forma that
+	// says `rules = new Listing {}` arrives with no `rules` key at all — while
+	// some endpoints reject the absence. Feature flags answer
+	// "`environments.production` missing required property `rules`". Unit tests
+	// cannot catch this class of bug, because a hand-written test payload
+	// naturally includes the key; only a real apply omits it.
+	//
+	// Keep hooks to restoring required-but-empty structure. Anything that
+	// reshapes or invents values belongs in a hand-written provisioner, where a
+	// reader expects to find logic.
+	BodyHook func(body map[string]any)
+
+	// ReadHook gets the filtered read document before it is returned, for
+	// server-assigned keys nested inside a declared structure. Fields is a flat
+	// list, so it filters top-level properties only: anything Vercel adds
+	// *inside* an object the forma declares comes back with it.
+	//
+	// A field hint cannot solve this either — formae does not apply
+	// hasProviderDefault to fields nested inside a collection, so a
+	// server-stamped key there is reported as unexpected state on every Verify,
+	// Extract and Sync. A flag environment's `revision` is one: Vercel stamps it
+	// on create and bumps it on every change.
+	ReadHook func(properties map[string]any)
+
 	// ParentInBody sends the parent property in the create body as well as
 	// using it in the native id. Normally the parent is a path segment and is
 	// excluded from the body; a few endpoints take it as a body field instead.

@@ -36,10 +36,17 @@ teamId = read?("env:VERCEL_TEAM_ID")
 /// harness's discovery window does not have to walk a large account.
 projectId = read?("env:VERCEL_PROJECT_ID")
 
+/// Optional API base-URL override. Set VERCEL_BASE_URL to point the plugin at a
+/// recording proxy: the conformance harness reports a failed apply only as
+/// "terminal state: Failed", discarding the plugin's StatusMessage, so the
+/// request and response of a failing call are otherwise unobservable.
+baseUrl = read?("env:VERCEL_BASE_URL")
+
 target = new formae.Target {
     label = "vercel-target"
     config = new vercel.Config {
         teamId = module.teamId
         projectId = module.projectId
+        baseUrl = module.baseUrl
     }
 }

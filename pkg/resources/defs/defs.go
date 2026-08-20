@@ -93,6 +93,20 @@ func register(def rest.Definition) {
 // customEnvironment — POST /v9/projects/{idOrName}/custom-environments.
 // The wire name is `slug`, not `name`; `copyEnvVarsFrom` is a create-time
 // instruction rather than stored state.
+//
+// DeleteBody is an empty object on purpose. The documented DELETE takes an
+// *optional* body (`deleteUnassignedEnvironmentVariables`), but the endpoint
+// rejects a request that has no body at all:
+//
+//	DELETE /v9/projects/{id}/custom-environments/{envId}   (no body)
+//	400 Invalid JSON
+//	DELETE …same… with {}
+//	200
+//
+// Verified against the live API on 2026-08-19. An optional body that is
+// mandatory in practice cannot be read off the spec, which is why the
+// conformance fixture caught it and unit tests could not: it passed Create,
+// Verify, Extract, Sync and Update, then failed at Destroy.
 func customEnvironment() rest.Definition {
 	return rest.Definition{
 		Type:           "VERCEL::Projects::CustomEnvironment",
@@ -103,6 +117,7 @@ func customEnvironment() rest.Definition {
 		ListField:      "environments",
 		Fields:         []string{"slug", "description", "branchMatcher", "copyEnvVarsFrom"},
 		CreateOnly:     []string{"slug", "copyEnvVarsFrom"},
+		DeleteBody:     map[string]any{},
 	}
 }
 

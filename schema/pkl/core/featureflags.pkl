@@ -321,10 +321,11 @@ class FlagEnvironment extends formae.SubResource {
     @formae.FieldHint {}
     targets: Mapping<String, Mapping<String, Mapping<String, Listing<FlagEntityValue>>>>?
 
-    /// Revision of this environment's configuration. Server-assigned: set it
-    /// only to match what a read returned.
-    @formae.FieldHint {}
-    revision: Int? = null
+    // `revision` is deliberately not declared. Vercel stamps it on create and
+    // bumps it on every change; no forma can usefully set it, and a field hint
+    // cannot suppress it because formae does not apply hasProviderDefault to
+    // fields nested inside a collection. The plugin strips it on read instead
+    // (dropEnvironmentRevisions in pkg/resources/defs/featureflags.go).
 }
 
 /// A feature flag definition.
@@ -388,7 +389,11 @@ class FeatureFlag extends formae.Resource {
     maintainerIds: Listing<String>?
 
     /// Mark the flag as permanent, so cleanup tooling leaves it alone.
-    @formae.FieldHint {}
+    ///
+    /// `hasProviderDefault` because Vercel returns a value here even when the
+    /// forma sets none, so a read that reported it would look like drift on
+    /// every sync.
+    @formae.FieldHint { hasProviderDefault = true }
     permanent: Boolean? = null
 
     /// Tags for grouping flags in the dashboard. Max 64 characters each.

@@ -1163,3 +1163,105 @@ func TestItemQuery_AppliesToRead(t *testing.T) {
 		t.Errorf("ErrorCode = %v", res.ErrorCode)
 	}
 }
+
+// A custom environment's DELETE takes an optional JSON body, and the endpoint
+// rejects the request when there is none: sending no body answers
+// `400 Invalid JSON`, while `{}` answers 200. The spec marks the body optional,
+// so this is only discoverable against the live API — the conformance fixture
+// failed at Destroy for exactly this reason after passing Create through Update.
+func TestDeleteBody_EmptyObjectIsStillSent(t *testing.T) {
+	var sawBody bool
+	var raw string
+	def := customEnvDef()
+	def.DeleteBody = map[string]any{}
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		raw = string(b)
+		sawBody = len(b) > 0
+		w.WriteHeader(http.StatusOK)
+	})
+	p := New(def, c, "")
+	if _, err := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "prj_1/env_1"}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if !sawBody {
+		t.Fatal("an explicitly declared empty DeleteBody must still put {} on the wire")
+	}
+	if raw != "{}" {
+		t.Errorf("body = %q, want {}", raw)
+	}
+}
+
+// The distinction matters: a nil DeleteBody means "no body at all", which is
+// what every other resource needs.
+func TestDeleteBody_NilSendsNoBody(t *testing.T) {
+	var length int
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		length = len(b)
+		w.WriteHeader(http.StatusOK)
+	})
+	p := New(customEnvDef(), c, "")
+	if _, err := p.Delete(context.Background(), &resource.DeleteRequest{NativeID: "prj_1/env_1"}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if length != 0 {
+		t.Errorf("nil DeleteBody sent %d bytes, want none", length)
+	}
+}
+
+// A declared field whose value is null must be omitted entirely, not sent as
+// null. stripNulls cleaned nulls *inside* objects and arrays but returned a
+// top-level nil unchanged, so the key still landed on the wire.
+//
+// Feature flags are where this surfaced: a forma that sets no `permanent`
+// renders it as null, and PUT .../feature-flags/flags answers
+// `400 Invalid request: permanent should be boolean`. Every engine-declared
+// resource sent top-level nulls this way; flags are simply the strictest
+// endpoint. This was the "undiagnosed" conformance failure.
+func TestBody_OmitsTopLevelNulls(t *testing.T) {
+	var body map[string]any
+	def := drainDef()
+	def.Fields = []string{"name", "url", "deliveryFormat"}
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = io.WriteString(w, `{"id":"drain_1","name":"keep"}`)
+	})
+	p := New(def, c, "")
+	props, _ := json.Marshal(map[string]any{
+		"name":           "keep",
+		"url":            nil, // unset optional
+		"deliveryFormat": nil, // unset optional
+	})
+	if _, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if body["name"] != "keep" {
+		t.Errorf("set field lost: %v", body)
+	}
+	for _, k := range []string{"url", "deliveryFormat"} {
+		if v, present := body[k]; present {
+			t.Errorf("null field %q was sent as %v; it must be omitted", k, v)
+		}
+	}
+}
+
+// The same on update: a field cleared in the forma must be omitted, since these
+// endpoints spell "absent" by omission.
+func TestBody_OmitsTopLevelNullsOnUpdate(t *testing.T) {
+	var body map[string]any
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = io.WriteString(w, `{"id":"drain_1","name":"x"}`)
+	})
+	p := New(drainDef(), c, "")
+	props, _ := json.Marshal(map[string]any{"name": "x", "url": nil})
+	if _, err := p.Update(context.Background(), &resource.UpdateRequest{
+		NativeID: "drain_1", DesiredProperties: props,
+	}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if _, present := body["url"]; present {
+		t.Errorf("null field sent on update: %v", body)
+	}
+}

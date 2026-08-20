@@ -57,6 +57,8 @@ func flag() rest.Definition {
 		CollectionPath: "/v1/projects/{parent}/feature-flags/flags",
 		ItemPath:       "/v1/projects/{parent}/feature-flags/flags/{id}",
 		CreateMethod:   "PUT",
+		BodyHook:       ensureEnvironmentRules,
+		ReadHook:       dropEnvironmentRevisions,
 		ListField:      "data",
 		Fields: []string{
 			"slug", "kind", "variants", "environments",
@@ -134,5 +136,51 @@ func flagSDKKey() rest.Definition {
 		Rename:            map[string]string{"keyLabel": "label"},
 		CreateOnly:        []string{"sdkKeyType", "environment", "keyLabel"},
 		NoUpdate:          true,
+	}
+}
+
+// ensureEnvironmentRules puts back the `rules` key formae elides when a forma
+// declares an empty rule list. The endpoint requires the key to be present in
+// every environment even when there are no rules:
+//
+//	400 Invalid request: `environments.production` missing required property `rules`
+//
+// Recorded off the live API on 2026-08-20. This was the conformance failure that
+// stayed undiagnosed: the harness reports a failed apply only as "terminal
+// state: Failed", and every unit-test payload includes `rules` by hand.
+func ensureEnvironmentRules(body map[string]any) {
+	envs, ok := body["environments"].(map[string]any)
+	if !ok {
+		return
+	}
+	for name, raw := range envs {
+		env, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if _, present := env["rules"]; !present {
+			env["rules"] = []any{}
+		}
+		envs[name] = env
+	}
+}
+
+// dropEnvironmentRevisions removes the per-environment `revision` Vercel stamps
+// on create and bumps on every change. No forma can usefully set it, and
+// reporting it makes every Verify, Extract and Sync fail with "not expected and
+// not a provider default" — hasProviderDefault does not reach fields nested
+// inside a collection.
+func dropEnvironmentRevisions(properties map[string]any) {
+	envs, ok := properties["environments"].(map[string]any)
+	if !ok {
+		return
+	}
+	for name, raw := range envs {
+		env, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		delete(env, "revision")
+		envs[name] = env
 	}
 }
