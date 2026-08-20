@@ -525,3 +525,33 @@ class FeatureFlagSDKKey extends formae.Resource {
     @formae.FieldHint { createOnly = true }
     keyLabel: String? = null
 }
+
+/// Per-project feature-flag settings.
+/// Maps to `PATCH /v1/projects/{projectIdOrName}/feature-flags/settings`.
+///
+/// A singleton: one per project, with no id of its own, so it is addressed by
+/// the project alone. There is no create and no delete — the same PATCH both
+/// establishes and updates the settings, and they can be turned off but not
+/// removed.
+///
+/// Only `enabled` is modelled. The endpoint also accepts `entities` (custom
+/// evaluation entities, their attributes and label sets — three levels of
+/// nesting) and `environments`. Neither is declared, so neither is reported: a
+/// read returns only what a forma can set.
+@formae.ResourceHint {
+    type = "VERCEL::FeatureFlags::Settings"
+    identifier = "$.projectId"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class Settings extends formae.Resource {
+    fixed hidden type: String = "VERCEL::FeatureFlags::Settings"
+
+    /// Project these settings belong to. The whole identity of the resource.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// Whether the feature-flag system is on for this project.
+    @formae.FieldHint {}
+    enabled: Boolean
+}

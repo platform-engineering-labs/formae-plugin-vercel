@@ -1,0 +1,33 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::FeatureFlags::Settings.
+//
+// The first singleton fixture in this plugin. The engine has had the capability
+// for a while but nothing declared it, so this is also the first time it is
+// exercised against the real API: no id of its own, native id is the project,
+// PATCH serves as both create and update, and there is no delete at all.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+import "@vercel/core/featureflags.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-flagsettings-project"
+  name = "\(v.prefix)-flagset-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new featureflags.Settings {
+    label = "plugin-sdk-test-flagsettings"
+    projectId = project.res.id
+    enabled = false
+  }
+}

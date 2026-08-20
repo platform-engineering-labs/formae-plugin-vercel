@@ -212,6 +212,12 @@ jobs:
           # so that value must never reach it.
           REQUESTED_VERSION: ${{ inputs.formae_version || matrix.formae_version }}
           TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag' }}
+          # Discovery covers one fixture more than CRUD does.
+          # VERCEL::FeatureFlags::Settings is a singleton that exists for
+          # every project, so it can never read as absent and the CRUD
+          # phase's out-of-band-delete step cannot pass. Its discovery
+          # does pass, and dropping the fixture entirely would lose that.
+          DISCOVERY_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsettings' }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::notice title=Conformance skipped::VERCEL_TOKEN is not set on this repository. Add it under Settings -> Secrets and variables -> Actions."
@@ -232,5 +238,14 @@ jobs:
           # deliberately red -- a removed test hides a gap, a red one names it --
           # so running all eleven exits non-zero by design. Dispatch with an
           # empty test_filter to see the whole picture.
-          echo "fixtures: ${TEST_FILTER:-<all>}"
-          make conformance-test TEST="$TEST_FILTER" $VERSION_ARG
+          echo "crud fixtures:      ${TEST_FILTER:-<all>}"
+          echo "discovery fixtures: ${DISCOVERY_FILTER:-<all>}"
+
+          # The two phases run separately so each gets its own fixture set, and
+          # both always run: a failing CRUD phase must not hide discovery.
+          make conformance-test-crud TEST="$TEST_FILTER" $VERSION_ARG; crud=$?
+          make conformance-test-discovery TEST="$DISCOVERY_FILTER" $VERSION_ARG; disc=$?
+          if [ $crud -ne 0 ] || [ $disc -ne 0 ]; then
+            echo "conformance: crud=$crud discovery=$disc"
+            exit 1
+          fi

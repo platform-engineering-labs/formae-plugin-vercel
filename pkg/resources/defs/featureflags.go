@@ -22,6 +22,7 @@ import "github.com/platform-engineering-labs/formae-plugin-vercel/pkg/resources/
 func featureFlags() []rest.Definition {
 	return []rest.Definition{
 		flag(),
+		featureFlagSettings(),
 		flagSegment(),
 		flagSDKKey(),
 	}
@@ -182,5 +183,47 @@ func dropEnvironmentRevisions(properties map[string]any) {
 		}
 		delete(env, "revision")
 		envs[name] = env
+	}
+}
+
+// featureFlagSettings — the per-project feature-flag configuration.
+//
+//	GET   /v1/projects/{projectIdOrName}/feature-flags/settings
+//	PATCH /v1/projects/{projectIdOrName}/feature-flags/settings
+//
+// A singleton: one per project, no id of its own, so the native id is the
+// project id alone. There is no POST — PATCH serves as create and update. This
+// is the first Singleton in the plugin; the capability existed but nothing had
+// declared it.
+//
+// There is no DELETE either, and declaring NoDelete turned out to be the wrong
+// answer. A type that cannot be deleted makes every stack containing it
+// impossible to destroy: formae asks the plugin to delete the resource, the
+// plugin refuses, and the destroy fails. The conformance fixture showed this as
+// a failed Destroy after Create through Update had all passed.
+//
+// Deleting these settings therefore means resetting them to the inert state the
+// project had before anyone touched them: PATCH enabled=false. That is a real
+// operation with a real effect, not a no-op reported as success, and it leaves
+// the project exactly as a project that never had settings.
+//
+// Only `enabled` is modelled. The endpoint also accepts `entities` (custom
+// evaluation entities and their attributes, three levels of nesting) and
+// `environments`; neither is declared yet, so reads drop them rather than
+// reporting state no forma asked for.
+func featureFlagSettings() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::FeatureFlags::Settings",
+		Scope:          rest.ScopeProject,
+		ParentProperty: "projectId",
+		// One URL serves both roles for a singleton; the invariants in
+		// defs_test.go want the collection path declared regardless.
+		CollectionPath: "/v1/projects/{parent}/feature-flags/settings",
+		ItemPath:       "/v1/projects/{parent}/feature-flags/settings",
+		Singleton:      true,
+		CreateMethod:   "PATCH",
+		DeleteMethod:   "PATCH",
+		DeleteBody:     map[string]any{"enabled": false},
+		Fields:         []string{"enabled"},
 	}
 }

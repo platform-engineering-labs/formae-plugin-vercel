@@ -298,6 +298,43 @@ class CustomEnvironment extends formae.Resource {
 }
 
 // =============================================================================
+// VERCEL::Projects::Member
+// =============================================================================
+
+/// Someone's membership of a project, and their role in it.
+/// Maps to `POST /v1/projects/{idOrName}/members`.
+///
+/// Every field is immutable, because the API has no PATCH here: changing a role
+/// removes the membership and adds it back. That is also the honest shape for a
+/// membership.
+///
+/// The member is identified by `uid` only. The API's create accepts a username
+/// or an email instead, but every other call — and the native id — addresses the
+/// member by uid, so a forma that named someone by email would create a
+/// membership the plugin could not then read or remove.
+@formae.ResourceHint {
+    type = "VERCEL::Projects::Member"
+    identifier = "$.uid"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class Member extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Projects::Member"
+
+    /// Project the membership is on. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// Vercel user id of the member, e.g. "usr_...". Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    uid: String
+
+    /// Role in this project. Immutable — a change replaces the membership.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    role: "ADMIN"|"PROJECT_DEVELOPER"|"PROJECT_GUEST"|"PROJECT_VIEWER"
+}
+
+// =============================================================================
 // VERCEL::Projects::Route
 // =============================================================================
 

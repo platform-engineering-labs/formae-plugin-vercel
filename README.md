@@ -14,7 +14,7 @@ Installs the binary, schema and manifest to `~/.pel/formae/plugins/vercel/v<vers
 
 ## Supported Resources
 
-21 resource types. Each implements Create, Read, Update, Delete and List
+23 resource types. Each implements Create, Read, Update, Delete and List
 unless noted.
 
 | Resource Type | Notes |
@@ -26,6 +26,8 @@ unless noted.
 | `VERCEL::Domains::Domain` | Registers a domain on the account — the prerequisite for `DNS::Record` and for attaching a domain to a project. No update (the API's PATCH is op-based); adding does not verify. |
 | `VERCEL::DNS::Record` | Record type is `recordType` here — `type` is reserved. |
 | `VERCEL::Projects::Route` | Redirects, rewrites and status rules. Every write stages a version and the plugin promotes it, so a rule is live when the apply succeeds. |
+| `VERCEL::Projects::Member` | Who may work on a project, and in what role. Identified by `uid`; no update endpoint, so a role change replaces the membership. |
+| `VERCEL::FeatureFlags::Settings` | Per-project feature-flag configuration. A singleton keyed by the project. "Delete" resets it to disabled, since the endpoint has no DELETE and a type that cannot be deleted makes its stack undestroyable. |
 | `VERCEL::GlobalConfig::Config` | Edge Config's new API name. `slug` is immutable, so changes replace. |
 | `VERCEL::Webhooks::Webhook` | No update endpoint; any change replaces. |
 | `VERCEL::Networking::Network` | **Asynchronous** — create polls until `status: ready`. |

@@ -1,0 +1,45 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::FeatureFlags::Settings.
+//
+// The first singleton fixture in this plugin. The engine has had the capability
+// for a while but nothing declared it, so this is also the first time it is
+// exercised against the real API: no id of its own, native id is the project,
+// PATCH serves as both create and update, and "delete" resets the settings to
+// disabled.
+//
+// **This fixture is discovery-only, and the CI CRUD filter leaves it out.**
+// Create, Verify, Extract, Sync, Update and Destroy all pass; the OOB-delete
+// step cannot. That step deletes the resource behind formae's back and expects a
+// later sync to drop it from inventory — but this endpoint returns an object for
+// every project, so the settings can never read as absent. A resource that
+// always exists cannot be observed to be gone.
+//
+// Mapping `enabled = false` to NotFound would make the step pass and would be
+// wrong: a forma that deliberately declares the feature off would then never
+// converge, because its own desired state would read back as missing.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+import "@vercel/core/featureflags.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-flagsettings-project"
+  name = "\(v.prefix)-flagset-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new featureflags.Settings {
+    label = "plugin-sdk-test-flagsettings"
+    projectId = project.res.id
+    enabled = true
+  }
+}
