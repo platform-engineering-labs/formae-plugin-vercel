@@ -154,6 +154,16 @@ type Definition struct {
 	// object is a different request from an absent one.
 	WrapExclude []string
 
+	// ReadRename maps a PKL property to the field a *response* carries it in,
+	// for endpoints that name the same thing differently on the way in and out.
+	//
+	// Rename applies to both directions and so cannot express that asymmetry.
+	// An SDK key is created with `sdkKeyType` and read back as `type`: renaming
+	// outright would break create, and leaving it unmapped means a discovered
+	// key arrives without a property its schema requires, which is how an
+	// extract produces a forma that will not apply.
+	ReadRename map[string]string
+
 	// IDField is the response field holding the resource id. Defaults to "id".
 	IDField string
 	// CreateIDField overrides IDField for the create response only. Vercel is

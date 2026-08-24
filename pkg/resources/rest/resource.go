@@ -214,6 +214,14 @@ func (r *Resource) toProperties(raw props, parent string) props {
 	for _, field := range r.def.Fields {
 		if v, ok := raw[r.def.apiName(field)]; ok {
 			out[field] = v
+			continue
+		}
+		// The response may carry the field under a different name than the
+		// request does.
+		if from, ok := r.def.ReadRename[field]; ok {
+			if v, ok := raw[from]; ok {
+				out[field] = v
+			}
 		}
 	}
 	// A singleton or bag has no id of its own; reporting one would drift.

@@ -1265,3 +1265,48 @@ func TestBody_OmitsTopLevelNullsOnUpdate(t *testing.T) {
 		t.Errorf("null field sent on update: %v", body)
 	}
 }
+
+// An endpoint that names a field one way in the request and another in the
+// response needs the read direction mapped on its own. Rename applies to both
+// and cannot express the asymmetry.
+//
+// The case: an SDK key is created with `sdkKeyType` and read back as `type`.
+// Leaving the read unmapped dropped the property from every read, which is
+// enough for discovery never to see the resource — its schema requires the
+// field — and enough for an extracted forma to be one that cannot be applied.
+func TestReadRename_MapsResponseOnlyField(t *testing.T) {
+	def := drainDef()
+	def.Fields = []string{"name", "deliveryFormat"}
+	def.ReadRename = map[string]string{"deliveryFormat": "format"}
+	var sentBody map[string]any
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			_ = json.NewDecoder(r.Body).Decode(&sentBody)
+		}
+		// The response names it `format`, the request names it `deliveryFormat`.
+		_, _ = io.WriteString(w, `{"id":"drain_1","name":"ship","format":"json"}`)
+	})
+	p := New(def, c, "")
+
+	props, _ := json.Marshal(map[string]any{"name": "ship", "deliveryFormat": "json"})
+	if _, err := p.Create(context.Background(), &resource.CreateRequest{Properties: props}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// The write direction must be untouched by ReadRename.
+	if sentBody["deliveryFormat"] != "json" {
+		t.Errorf("create body = %v; ReadRename must not affect requests", sentBody)
+	}
+
+	res, err := p.Read(context.Background(), &resource.ReadRequest{NativeID: "drain_1"})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	var got map[string]any
+	_ = json.Unmarshal([]byte(res.Properties), &got)
+	if got["deliveryFormat"] != "json" {
+		t.Errorf("read = %v, want deliveryFormat recovered from `format`", got)
+	}
+	if _, present := got["format"]; present {
+		t.Error("the API-side name must not leak into state")
+	}
+}

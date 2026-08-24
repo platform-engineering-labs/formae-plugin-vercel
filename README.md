@@ -247,8 +247,9 @@ Set these under **Settings → Secrets and variables → Actions**:
 | `VERCEL_TOKEN` | yes | Without it the job logs a notice and exits 0 rather than failing confusingly |
 | `VERCEL_TEAM_ID` | no | Run against a team instead of the token's personal account |
 
-The job runs a **filtered set of fixtures** by default — the eight that pass on
-an account with the capabilities they need. The remaining three
+The job runs a **filtered set of fixtures** by default — the ten that pass on an
+account with the capabilities they need (eleven in the discovery phase, which
+also covers the singleton). The remaining three
 (`accessgroup`, `authtoken`, `drain`) fail with a `403` from the plan or the
 token's scope, and a job that always fails is a job nobody reads. Dispatch with
 `test_filter` emptied to run all eleven and see the full picture.

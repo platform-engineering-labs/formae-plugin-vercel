@@ -1,0 +1,47 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::FeatureFlags::Segment.
+//
+// Segments are project-scoped, free and instant, and they page with `?cursor=`,
+// so this fixture also exercises the pagination the engine only learned to
+// follow recently.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+import "@vercel/core/featureflags.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-segment-project"
+  name = "\(v.prefix)-segment-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new featureflags.FeatureFlagSegment {
+    label = "plugin-sdk-test-segment"
+    projectId = project.res.id
+    slug = "\(v.prefix)-\(v.shortID)"
+    segmentLabel = "SDK conformance test segment (updated)"
+    description = "Audience used by the conformance suite, updated"
+    hint = "email"
+    data = new featureflags.SegmentData {
+      include = new Mapping {
+        ["user"] = new Mapping {
+          ["email"] = new Listing {
+            new featureflags.FlagEntityValue {
+              value = "conformance@example.com"
+              note = "Pinned by the plugin SDK conformance suite"
+            }
+          }
+        }
+      }
+    }
+  }
+}

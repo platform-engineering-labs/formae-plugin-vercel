@@ -1,0 +1,36 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::FeatureFlags::SDKKey.
+//
+// Every field is immutable (the API has no update), so there is no -update
+// fixture: the harness skips Update and exercises Replace instead.
+//
+// The key's cleartext secrets are disclosed once at creation and are
+// deliberately not part of the resource's state, so nothing here can assert on
+// them — which is the point.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+import "@vercel/core/featureflags.pkl"
+
+import "./config/vars.pkl" as v
+
+local project = new vercel.Project {
+  label = "plugin-sdk-test-sdkkey-project"
+  name = "\(v.prefix)-sdkkey-\(v.testRunID)"
+}
+
+forma {
+  v.stack
+  v.target
+
+  project
+
+  new featureflags.FeatureFlagSDKKey {
+    label = "plugin-sdk-test-sdkkey"
+    projectId = project.res.id
+    sdkKeyType = "server"
+    environment = "production"
+  }
+}

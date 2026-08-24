@@ -119,11 +119,13 @@ func flagSegment() rest.Definition {
 //
 // `sdkKeyType` is the one place where this API contradicts itself: the create
 // body requires `sdkKeyType`, while both the create response and the collection
-// answer with `type`. A Rename would have to pick one, and picking `type` would
-// break create outright — so the field is sent under its create-body name and
-// simply never comes back from a read. It is create-only, which keeps the
-// mismatch out of the update path, and `type` could not have been a PKL
-// property name anyway.
+// answer with `type`. Rename applies in both directions and would break create,
+// so the read direction is mapped on its own with ReadRename.
+//
+// Leaving it unmapped was not harmless. The field is requiredOnCreate, so a
+// discovered or extracted key arrived without it — enough for the conformance
+// discovery test to never see the resource at all, and enough to make an
+// extracted forma one that cannot be applied.
 //
 // The cleartext secrets (`keyValue`, `tokenValue`, `connectionString`) are
 // disclosed exactly once, at creation, and are deliberately not modelled — the
@@ -141,6 +143,7 @@ func flagSDKKey() rest.Definition {
 		ReadViaCollection: true,
 		Fields:            []string{"sdkKeyType", "environment", "keyLabel"},
 		Rename:            map[string]string{"keyLabel": "label"},
+		ReadRename:        map[string]string{"sdkKeyType": "type"},
 		CreateOnly:        []string{"sdkKeyType", "environment", "keyLabel"},
 		NoUpdate:          true,
 	}
