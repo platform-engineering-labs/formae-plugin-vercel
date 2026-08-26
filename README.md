@@ -1,272 +1,94 @@
-# Vercel Plugin for formae
+# Vercel Plugin for Formae
 
-A [formae](https://github.com/platform-engineering-labs/formae) plugin for managing
-[Vercel](https://vercel.com/) resources through the Vercel REST API
-(`https://api.vercel.com`).
+[![CI](https://github.com/platform-engineering-labs/formae-plugin-vercel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/platform-engineering-labs/formae-plugin-vercel/actions/workflows/ci.yml)
 
-## Installation
-
-```bash
-make install
-```
-
-Installs the binary, schema and manifest to `~/.pel/formae/plugins/vercel/v<version>/`.
+Formae plugin for managing Vercel resources.
 
 ## Supported Resources
 
-11 resource types, each proven against a live Vercel account by the conformance
-suite. Each implements Create, Read, Update, Delete and List unless noted.
+Every type below passes the conformance suite against a live Vercel account.
 
-Twelve further resource types exist but are **not on main**: three fail against
-a real account for want of a plan or token scope, and nine have never been run
-against the API at all. They live on the `unverified-resources` branch rather
-than here, because every fixture written for this plugin so far has found a bug
-in the resource it covered — three for three. Shipping code with that base rate
-as though it were tested would be dishonest. See the open pull request for the
-list and what each one needs to be provable.
+| Resource Type | Description |
+|---------------|-------------|
+| `VERCEL::Projects::Project` | Projects, build settings, and the connected Git repository |
+| `VERCEL::Projects::EnvironmentVariable` | Environment variables, per deployment target |
+| `VERCEL::Projects::CustomEnvironment` | Custom deployment environments |
+| `VERCEL::Projects::Route` | Redirects, rewrites and status rules |
+| `VERCEL::GlobalConfig::Config` | Global Config stores (formerly Edge Config) |
+| `VERCEL::Webhooks::Webhook` | Account webhooks |
+| `VERCEL::VCR::Repository` | Container registry repositories |
+| `VERCEL::FeatureFlags::Flag` | Feature flag definitions |
+| `VERCEL::FeatureFlags::Segment` | Reusable audiences for flag rules |
+| `VERCEL::FeatureFlags::SDKKey` | Flags SDK keys, per environment |
+| `VERCEL::FeatureFlags::Settings` | Per-project feature flag configuration |
 
-| Resource Type | Notes |
-|---------------|-------|
-| `VERCEL::Projects::Project` | An empty project (no Git repo, no deployment) is free and instant. Set `gitRepository` to connect a repo so pushes deploy — this requires a Git provider already connected to the account, which no documented endpoint can do (see [`examples/private-repo/`](examples/private-repo/)). `name` and `gitRepository` are immutable — changing either replaces the project. |
-| `VERCEL::Projects::EnvironmentVariable` | Reference the project with `project.res.id`. |
-| `VERCEL::Projects::CustomEnvironment` | Named `slug` on the wire, not `name`. |
-| `VERCEL::Projects::Route` | Redirects, rewrites and status rules. Every write stages a version and the plugin promotes it, so a rule is live when the apply succeeds. |
-| `VERCEL::FeatureFlags::Settings` | Per-project feature-flag configuration. A singleton keyed by the project. "Delete" resets it to disabled, since the endpoint has no DELETE and a type that cannot be deleted makes its stack undestroyable. |
-| `VERCEL::GlobalConfig::Config` | Edge Config's new API name. `slug` is immutable, so changes replace. |
-| `VERCEL::Webhooks::Webhook` | No update endpoint; any change replaces. |
-| `VERCEL::VCR::Repository` | Container registry repository. No update. |
-| `VERCEL::FeatureFlags::Flag` | Create verb is PUT. |
-| `VERCEL::FeatureFlags::Segment` | Create verb is PUT. |
-| `VERCEL::FeatureFlags::SDKKey` | Keyed by `hashKey`. No update. |
+Twelve further types — domains, DNS records, certificates, drains, access
+groups, user tokens, aliases, Secure Compute networks and project members —
+are implemented but **not on main**: three fail against a live account for want
+of a plan or token scope, and nine have never been run against the API at all.
+They live on the `unverified-resources` branch with an open pull request, along
+with what each one needs to be provable.
 
-Most operations are synchronous. `Networking::Network` is not: create returns
-InProgress and polls until the network is actually usable.
+## Configuration
 
-### Scope policy
-
-This plugin uses **only endpoints Vercel publicly documents** — those in the REST
-reference and its machine-readable spec at <https://openapi.vercel.sh/>. Several
-things Vercel itself supports are reachable only through paths it does not
-document (blob stores, OAuth apps, project crons, integration project access), so
-they are out of scope: an undocumented path can change without notice, and there
-would be no ground to stand on when it does.
-
-Resources are also left out when the API cannot round-trip them. A create
-response with no id, a read that returns none of the managed fields, or a
-collection with no list endpoint each make a resource undeclarable rather than
-merely unwritten.
-
-## Credentials
-
-The plugin reads an access token from the environment — never from a forma. Create one
-at <https://vercel.com/account/settings/tokens>.
-
-| Variable | Description |
-|----------|-------------|
-| `VERCEL_TOKEN` | Access token (Vercel CLI convention). Checked first. |
-| `VERCEL_API_TOKEN` | Same thing under an alternative conventional name. Fallback. |
-
-```bash
-export VERCEL_TOKEN=...
-```
-
-A token created for your personal account can still act on a team's resources — set
-`teamId` (or `slug`) on the target for that. A token scoped to one team can only reach
-that team.
-
-## Target configuration
-
-Every field is optional. A bare `Config {}` deploys to, and discovers, the token's
-personal account:
+Configure a Vercel target in your Forma file. Every field is optional; a bare
+config manages the token's personal account.
 
 ```pkl
-import "@formae/formae.pkl"
-import "@vercel/core/vercel.pkl"
-
 new formae.Target {
-  label = "vercel"
-  config = new vercel.Config {}
-}
-```
-
-| Field | Purpose |
-|-------|---------|
-| `teamId` | Act on behalf of a team (`?teamId=`), e.g. `"team_abc123"` |
-| `slug` | Same, by team slug (`?slug=`). Ignored when `teamId` is set. |
-| `baseUrl` | Override `https://api.vercel.com` |
-| `projectId` | Advanced: scope environment-variable `List()`/discovery to one project instead of walking every project the token can see |
-
-## Example usage
-
-```pkl
-amends "@formae/forma.pkl"
-
-import "@formae/formae.pkl"
-import "@vercel/core/vercel.pkl"
-
-local site = new vercel.Project {
-  label = "my-site"
-  name = "my-site"
-  framework = "nextjs"
-  buildCommand = "npm run build"
-  outputDirectory = ".next"
-
-  // Optional. Connect a repository so pushes deploy automatically.
-  // Immutable: changing it replaces the project.
-  gitRepository = new vercel.GitRepository {
-    type = "github"
-    repo = "my-org/my-site"
-  }
-}
-
-forma {
-  new formae.Stack {
-    label = "default"
-    description = "Default stack"
-  }
-
-  new formae.Target {
     label = "vercel"
-    config = new vercel.Config {}
-  }
-
-  site
-
-  new vercel.EnvironmentVariable {
-    label = "api-url"
-    projectId = site.res.id
-    key = "NEXT_PUBLIC_API_URL"
-    value = "https://api.example.com"
-    variableType = "plain"
-    targets = new Listing { "production"; "preview" }
-  }
+    config = new vercel.Config {
+        teamId = "team_abc123"   // or slug = "my-team"; omit for personal scope
+        baseUrl = null           // override https://api.vercel.com
+        projectId = null          // scope env-var discovery to one project
+    }
 }
 ```
 
-```bash
-formae apply --mode reconcile --watch examples/basic/main.pkl
-```
+Authentication reads an access token from the environment, never from a Forma.
+Create one at <https://vercel.com/account/settings/tokens>:
 
-The full example is in [`examples/basic/`](examples/basic/).
+- `VERCEL_TOKEN` — the Vercel CLI's name. Checked first.
+- `VERCEL_API_TOKEN` — the other conventional name. Fallback.
 
-### Naming notes
+A personal-account token can act on a team when `teamId`/`slug` is set; a
+team-scoped token reaches only that team.
 
-Two fields deviate from the Vercel API's own names because `formae.Resource` already
-reserves those identifiers:
+## Examples
 
-| Forma field | Vercel API field |
-|-------------|------------------|
-| `EnvironmentVariable.variableType` | `type` |
-| `EnvironmentVariable.targets` | `target` |
+See [examples/](examples/) for usage patterns:
 
-### Secret values
+- `basic/` - A project and an environment variable
+- `private-repo/` - Deploying from a private repository, and the manual step it needs
+- `full-stack/` - Project, environment variables, custom environment and routes
+- `supabase-vercel/` - A Supabase database wired into a Vercel frontend across two plugins
+- `discover/` - Adopting resources that already exist
 
-`variableType` defaults to `encrypted`, which the plugin reads back with `decrypt=true`,
-so values round-trip and formae sees no drift. `sensitive` variables are **never**
-returned by the Vercel API — a formae-managed `sensitive` variable will report drift on
-every sync and is not discoverable. Use `plain` or `encrypted`, and wrap the value in a
-formae secret if it must not appear in the forma:
+## Notes
 
-```pkl
-value = formae.value(random.password(32, false)).opaque.setOnce
-```
+**Connecting a Git repository needs a one-time manual step.** Setting
+`gitRepository` requires a Git provider already connected to the Vercel account
+— an OAuth / App-install flow that no documented endpoint can perform. Without
+it, project creation fails with `You need to add a Login Connection to your
+GitHub account first`, for public repositories as much as private ones. See
+[`examples/private-repo/`](examples/private-repo/).
 
-## Testing
+**Two fields are renamed** because `formae.Resource` reserves the API's names:
+`EnvironmentVariable.variableType` is the API's `type`, and
+`EnvironmentVariable.targets` is its `target`.
 
-```bash
-make test-unit           # unit tests (no credentials required)
-make lint
-make verify-schema
-make install             # conformance runs against the INSTALLED binary
-make conformance-test
-```
+**Use `encrypted`, not `sensitive`, for secret environment variables.** Vercel
+never returns a `sensitive` value, so a Forma-managed one reports drift on every
+sync and is not discoverable. `encrypted` round-trips.
 
-Conformance parameters:
+**`Project.name` and `Project.gitRepository` are immutable.** Changing either
+replaces the project, which changes every generated deployment URL.
 
-| Parameter | Meaning |
-|-----------|---------|
-| `TEST` | Filter test cases by name, e.g. `TEST=project`. Comma-separated for several. |
-| `VERSION` | formae version to test against, as a **bare semver** (`VERSION=0.88.1`). Omit it to let the harness choose from the stable channel. `latest` is **not** valid — the harness parses this with semver and every fixture fails in setup. |
-| `TIMEOUT` | Per-operation timeout in **minutes** (bare number, not a Go duration). Harness default is 5. |
-| `PARALLEL` | Max parallel test cases |
-| `TESTDATA_DIR` | Alternate testdata directory |
-| `GOTEST_TIMEOUT` | Wall-clock limit for the whole run, default `60m` |
+## Contributing
 
-`TIMEOUT` bounds a single resource operation; `GOTEST_TIMEOUT` bounds the entire
-`go test` invocation. They are different things — passing a Go duration such as
-`15m` to `TIMEOUT` is not valid.
-
-Conformance tests create and destroy real Vercel projects. They need:
-
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `VERCEL_TOKEN` | yes | Access token |
-| `VERCEL_TEAM_ID` | no | Run against a team instead of the personal account |
-| `VERCEL_PROJECT_ID` | no | Scope env-var discovery to one project on large accounts |
-
-### Conformance in CI
-
-The `conformance-tests` job runs on every push to `main`, on every pull request,
-nightly, and on `workflow_dispatch`. Every run creates and destroys real Vercel
-resources under the `formae-sdk-test` name prefix.
-
-A pull request from a fork gets no repository secrets, so the job logs a notice
-and exits 0 instead of failing on a missing token.
-
-### Discovery reliability
-
-`List` distinguishes three outcomes rather than two, because "no resources" is
-an answer formae acts on:
-
-| Outcome | Behaviour |
-|---|---|
-| 401 / 403 / 404 | An empty list. A token scoped away from a resource type genuinely sees none, and one such type must not stop the others being discovered. |
-| 429 / 5xx / connection failure | Retried with backoff (4 attempts, ~7s), then **failed**. Reporting an empty list here is how formae comes to believe managed resources were deleted. |
-| Success | Every page. Collections that paginate declare the cursor parameter their endpoint uses (`PageParam`), and the engine follows `pagination.next` to the end. |
-
-Discovery is the one place the plugin retries on its own: every write goes
-through the agent's operator, which has its own retry loop, but `List` is called
-straight from the scan loop with nothing above it to try again.
-
-Runs are **serialized repo-wide** through a `concurrency` group. Resource names
-carry `FORMAE_TEST_RUN_ID`, but `scripts/ci/clean-environment.sh` deletes
-everything matching the shared prefix, before and after each run — two concurrent
-runs would delete each other's live projects mid-apply. `cancel-in-progress` is
-deliberately `false`: cancelling mid-apply abandons real resources, whereas
-letting a run finish lets its own post-test cleanup remove them. Expect a queue
-of roughly 8 minutes per run when several land together.
-
-Set these under **Settings → Secrets and variables → Actions**:
-
-| Secret | Required | Purpose |
-|--------|----------|---------|
-| `VERCEL_TOKEN` | yes | Without it the job logs a notice and exits 0 rather than failing confusingly |
-| `VERCEL_TEAM_ID` | no | Run against a team instead of the token's personal account |
-
-The job runs a **filtered set of fixtures** by default — the ten that pass on an
-account with the capabilities they need (eleven in the discovery phase, which
-also covers the singleton). The remaining three
-(`accessgroup`, `authtoken`, `drain`) fail with a `403` from the plan or the
-token's scope, and a job that always fails is a job nobody reads. Dispatch with
-`test_filter` emptied to run all eleven and see the full picture.
-
-Treat that filter with suspicion, though. Two fixtures sat outside it as
-"account capability" failures and were in fact plugin bugs — the filter hid
-them exactly as deleting them would have. Re-run the excluded ones against the
-API before believing the reason given for any of them.
-
-Use literal fixture names in `test_filter`, comma separated. The harness also
-accepts a `/regex/` form, but `TEST` passes through `make`, which treats a bare
-`$` as a variable reference — an anchored `/…$/` pattern silently loses its
-anchor and then matches nothing.
-
-Each run isolates its resources with `FORMAE_TEST_RUN_ID`, so a nightly and a
-manual dispatch cannot clean up each other's projects.
-
-Every test resource is named `formae-sdk-test-*`;
-[`scripts/ci/clean-environment.sh`](scripts/ci/clean-environment.sh) deletes anything
-matching that prefix before and after each run. It requires `jq`.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for building, testing and the conformance
+suite.
 
 ## License
 
-FSL-1.1-ALv2. See [LICENSE](LICENSE).
+FSL-1.1-ALv2
