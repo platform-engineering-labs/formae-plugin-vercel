@@ -67,20 +67,14 @@ func (p *Plugin) LabelConfig() model.LabelConfig {
 		DefaultQuery: "$.name",
 		// Overrides for every resource whose identity is not `name`.
 		ResourceOverrides: map[string]string{
-			"VERCEL::Projects::EnvironmentVariable":   "$.key",
-			"VERCEL::Projects::CustomEnvironment":     "$.slug",
-			"VERCEL::GlobalConfig::Config":            "$.slug",
-			"VERCEL::Webhooks::Webhook":               "$.url",
-			"VERCEL::Deployments::Alias":              "$.alias",
-			"VERCEL::AccessGroups::ProjectAssignment": "$.projectId",
-			"VERCEL::FeatureFlags::Flag":              "$.slug",
-			"VERCEL::FeatureFlags::Segment":           "$.slug",
-			"VERCEL::FeatureFlags::SDKKey":            "$.keyLabel",
-			"VERCEL::Certs::Certificate":              "$.cns[0]",
-			"VERCEL::Certs::UploadedCertificate":      "$.id",
+			"VERCEL::Projects::EnvironmentVariable": "$.key",
+			"VERCEL::Projects::CustomEnvironment":   "$.slug",
+			"VERCEL::GlobalConfig::Config":          "$.slug",
+			"VERCEL::Webhooks::Webhook":             "$.url",
+			"VERCEL::FeatureFlags::Flag":            "$.slug",
+			"VERCEL::FeatureFlags::Segment":         "$.slug",
+			"VERCEL::FeatureFlags::SDKKey":          "$.keyLabel",
 			// A membership has no name of its own, and settings are identified
-			// by the project they belong to.
-			"VERCEL::Projects::Member":       "$.uid",
 			"VERCEL::FeatureFlags::Settings": "$.projectId",
 		},
 	}

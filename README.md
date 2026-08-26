@@ -14,31 +14,27 @@ Installs the binary, schema and manifest to `~/.pel/formae/plugins/vercel/v<vers
 
 ## Supported Resources
 
-23 resource types. Each implements Create, Read, Update, Delete and List
-unless noted.
+11 resource types, each proven against a live Vercel account by the conformance
+suite. Each implements Create, Read, Update, Delete and List unless noted.
+
+Twelve further resource types exist but are **not on main**: three fail against
+a real account for want of a plan or token scope, and nine have never been run
+against the API at all. They live on the `unverified-resources` branch rather
+than here, because every fixture written for this plugin so far has found a bug
+in the resource it covered — three for three. Shipping code with that base rate
+as though it were tested would be dishonest. See the open pull request for the
+list and what each one needs to be provable.
 
 | Resource Type | Notes |
 |---------------|-------|
 | `VERCEL::Projects::Project` | An empty project (no Git repo, no deployment) is free and instant. Set `gitRepository` to connect a repo so pushes deploy. `name` and `gitRepository` are immutable — changing either replaces the project. |
 | `VERCEL::Projects::EnvironmentVariable` | Reference the project with `project.res.id`. |
 | `VERCEL::Projects::CustomEnvironment` | Named `slug` on the wire, not `name`. |
-| `VERCEL::Projects::Domain` | Keyed by the domain name. Custom domains need a paid plan. |
-| `VERCEL::Domains::Domain` | Registers a domain on the account — the prerequisite for `DNS::Record` and for attaching a domain to a project. No update (the API's PATCH is op-based); adding does not verify. |
-| `VERCEL::DNS::Record` | Record type is `recordType` here — `type` is reserved. |
 | `VERCEL::Projects::Route` | Redirects, rewrites and status rules. Every write stages a version and the plugin promotes it, so a rule is live when the apply succeeds. |
-| `VERCEL::Projects::Member` | Who may work on a project, and in what role. Identified by `uid`; no update endpoint, so a role change replaces the membership. |
 | `VERCEL::FeatureFlags::Settings` | Per-project feature-flag configuration. A singleton keyed by the project. "Delete" resets it to disabled, since the endpoint has no DELETE and a type that cannot be deleted makes its stack undestroyable. |
 | `VERCEL::GlobalConfig::Config` | Edge Config's new API name. `slug` is immutable, so changes replace. |
 | `VERCEL::Webhooks::Webhook` | No update endpoint; any change replaces. |
-| `VERCEL::Networking::Network` | **Asynchronous** — create polls until `status: ready`. |
-| `VERCEL::AccessGroups::AccessGroup` | Update verb is POST; id is `accessGroupId`. |
-| `VERCEL::AccessGroups::ProjectAssignment` | A project's role inside an access group. |
-| `VERCEL::Auth::Token` | The token value is returned once at create and is deliberately not stored as state. |
 | `VERCEL::VCR::Repository` | Container registry repository. No update. |
-| `VERCEL::Certs::Certificate` | Vercel-issued cert for a set of common names. |
-| `VERCEL::Certs::UploadedCertificate` | Your own cert: three PEM blobs, all write-only. |
-| `VERCEL::Deployments::Alias` | Created under a deployment, but read/listed/deleted account-wide. |
-| `VERCEL::Drains::Drain` | One type covers log, trace **and** audit-log drains — they are all `POST /v1/drains`, differing only by `schemas` and delivery type. |
 | `VERCEL::FeatureFlags::Flag` | Create verb is PUT. |
 | `VERCEL::FeatureFlags::Segment` | Create verb is PUT. |
 | `VERCEL::FeatureFlags::SDKKey` | Keyed by `hashKey`. No update. |
@@ -224,7 +220,7 @@ an answer formae acts on:
 
 | Outcome | Behaviour |
 |---|---|
-| 401 / 403 / 404 | An empty list. A token scoped away from a resource type genuinely sees none, and one such type must not stop the other twenty-two being discovered. |
+| 401 / 403 / 404 | An empty list. A token scoped away from a resource type genuinely sees none, and one such type must not stop the others being discovered. |
 | 429 / 5xx / connection failure | Retried with backoff (4 attempts, ~7s), then **failed**. Reporting an empty list here is how formae comes to believe managed resources were deleted. |
 | Success | Every page. Collections that paginate declare the cursor parameter their endpoint uses (`PageParam`), and the engine follows `pagination.next` to the end. |
 

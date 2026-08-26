@@ -94,14 +94,17 @@ func TestCreate_UnknownResourceTypeIsHardError(t *testing.T) {
 
 // A resource type the token cannot read must not sink discovery of the others.
 //
-// Regression guard: making per-type List failures fatal meant one 403 on
-// access groups (a routinely-unscoped permission) aborted discovery for all
-// nineteen types, and the agent stored nothing at all. Credential problems are
-// caught at dispatch; a per-endpoint refusal is not a credential problem.
+// Regression guard: making per-type List failures fatal meant one 403 on a
+// routinely-unscoped permission aborted discovery for every other type, and the
+// agent stored nothing at all. Credential problems are caught at dispatch; a
+// per-endpoint refusal is not a credential problem.
+//
+// A 403 is the only class treated this way. A throttle or a 5xx fails the call
+// instead — see rest.List — because an empty list is an answer formae acts on.
 func TestList_PerTypeAPIFailureIsNotFatal(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = io.WriteString(w, `{"error":{"code":"forbidden","message":"You don't have permission to list the access group."}}`)
+		_, _ = io.WriteString(w, `{"error":{"code":"forbidden","message":"You don't have permission to list this resource."}}`)
 	}))
 	defer srv.Close()
 
@@ -109,12 +112,12 @@ func TestList_PerTypeAPIFailureIsNotFatal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
-	factory, ok := registry.GetFactory("VERCEL::AccessGroups::ProjectAssignment")
+	factory, ok := registry.GetFactory("VERCEL::GlobalConfig::Config")
 	if !ok {
 		t.Fatal("resource type not registered")
 	}
 	res, err := factory(c, &registry.TargetConfig{}).List(context.Background(),
-		&resource.ListRequest{ResourceType: "VERCEL::AccessGroups::ProjectAssignment"})
+		&resource.ListRequest{ResourceType: "VERCEL::GlobalConfig::Config"})
 	if err != nil {
 		t.Fatalf("a 403 on one type must not be fatal, got %v", err)
 	}
