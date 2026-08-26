@@ -27,7 +27,7 @@ list and what each one needs to be provable.
 
 | Resource Type | Notes |
 |---------------|-------|
-| `VERCEL::Projects::Project` | An empty project (no Git repo, no deployment) is free and instant. Set `gitRepository` to connect a repo so pushes deploy. `name` and `gitRepository` are immutable — changing either replaces the project. |
+| `VERCEL::Projects::Project` | An empty project (no Git repo, no deployment) is free and instant. Set `gitRepository` to connect a repo so pushes deploy — this requires a Git provider already connected to the account, which no documented endpoint can do (see [`examples/private-repo/`](examples/private-repo/)). `name` and `gitRepository` are immutable — changing either replaces the project. |
 | `VERCEL::Projects::EnvironmentVariable` | Reference the project with `project.res.id`. |
 | `VERCEL::Projects::CustomEnvironment` | Named `slug` on the wire, not `name`. |
 | `VERCEL::Projects::Route` | Redirects, rewrites and status rules. Every write stages a version and the plugin promotes it, so a rule is live when the apply succeeds. |

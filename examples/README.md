@@ -11,6 +11,7 @@ formae apply --mode reconcile --watch examples/basic/main.pkl
 | Example | Shows | Costs anything? |
 |---------|-------|-----------------|
 | [`basic/`](basic/) | Smallest useful forma: a project and one environment variable | No |
+| [`private-repo/`](private-repo/) | Deploying from a private repository, and the one-time manual step it needs | Needs a Git provider connected to the account first — no API can do that |
 | [`discover/`](discover/) | A bare target and nothing else — the agent discovers everything the token can see | No |
 | [`full-stack/`](full-stack/) | A whole project from one apply: custom environment, three flavours of environment variable, a Global Config store and a webhook, wired together with `site.res.id` | No. Global Config *writes* are metered on paid plans; creating the store is not |
 | [`supabase-vercel/`](supabase-vercel/) | A Supabase database and a Vercel frontend in one forma — the API key is created and handed to Vercel in the same apply | Needs both plugins installed and the two repos side by side; a Supabase project is a real database |

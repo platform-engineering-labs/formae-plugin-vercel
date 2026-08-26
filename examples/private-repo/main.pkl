@@ -1,0 +1,124 @@
+/*
+ * Deploying a private repository.
+ *
+ * A private repo needs no special handling in the forma — no deploy key, no
+ * token, nothing secret here at all. Access comes from Vercel's Git App
+ * installation, which is why this file looks identical to a public-repo
+ * project.
+ *
+ * What it *does* need is a one-time manual step that no API can perform.
+ *
+ * ---------------------------------------------------------------------------
+ * Before this forma can apply
+ * ---------------------------------------------------------------------------
+ *
+ * Connect the Git provider to the Vercel account or team, in the dashboard:
+ * Settings → Git, or install the Vercel GitHub App. For a private repository,
+ * also grant the App access to *that repository* — GitHub's per-repo grant is
+ * separate from installing the App at all.
+ *
+ * This cannot be declared. Vercel documents no endpoint that creates a Git
+ * connection: the only two integration endpoints are read-only
+ * (`git-namespaces`, `search-repo`), and the connection itself is an OAuth /
+ * App-install flow. This plugin uses only documented endpoints, so the step
+ * stays manual by design rather than by omission.
+ *
+ * Check whether an account is connected before applying:
+ *
+ *   curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+ *     "https://api.vercel.com/v1/integrations/git-namespaces?provider=github"
+ *
+ * `[]` means no connection. Applying anyway fails with a clear message:
+ *
+ *   400 Failed to link my-org/my-app.
+ *       You need to add a Login Connection to your GitHub account first.
+ *
+ * Note that error appears for *public* repositories too — the gate is the
+ * account connection, not the repository's visibility.
+ *
+ * ---------------------------------------------------------------------------
+ * What formae does and does not do here
+ * ---------------------------------------------------------------------------
+ *
+ * It creates the project, links the repository, and manages the environment
+ * variables. It does not deploy: once the repository is linked, pushes deploy
+ * themselves — production from the production branch, previews for pull
+ * requests. That is the point of the link.
+ *
+ *   export VERCEL_TOKEN=...
+ *   formae apply --mode reconcile --watch examples/private-repo/main.pkl
+ */
+amends "@formae/forma.pkl"
+
+import "@formae/formae.pkl"
+import "@formae/ext/random.pkl"
+import "@vercel/core/vercel.pkl"
+
+local app = new vercel.Project {
+  label = "private-app"
+  name = "private-app"
+  framework = "nextjs"
+
+  buildCommand = "npm run build"
+  outputDirectory = ".next"
+
+  // The repository, as "owner/name". Private repositories are addressed
+  // exactly like public ones.
+  //
+  // Immutable: `PATCH /v9/projects/{id}` carries no git link among its 44
+  // body properties, so changing either field replaces the project — and a
+  // replacement is a new project with new deployment URLs. Get it right the
+  // first time, or expect the URL churn.
+  gitRepository = new vercel.GitRepository {
+    // "github-limited" is the variant to use when the organisation will not
+    // allow the full GitHub App. "gitlab" and "bitbucket" work the same way.
+    type = "github"
+    repo = "my-org/my-private-app"
+  }
+}
+
+forma {
+  new formae.Stack {
+    label = "default"
+    description = "A Vercel project deploying from a private repository"
+  }
+
+  new formae.Target {
+    label = "vercel"
+    config = new vercel.Config {}
+  }
+
+  app
+
+  // Production and preview get different backends. `targets` is the Vercel
+  // API's `target` renamed, because formae.Resource reserves that name.
+  new vercel.EnvironmentVariable {
+    label = "api-url-production"
+    projectId = app.res.id
+    key = "NEXT_PUBLIC_API_URL"
+    value = "https://api.example.com"
+    variableType = "plain"
+    targets = new Listing { "production" }
+  }
+
+  new vercel.EnvironmentVariable {
+    label = "api-url-preview"
+    projectId = app.res.id
+    key = "NEXT_PUBLIC_API_URL"
+    value = "https://staging.api.example.com"
+    variableType = "plain"
+    targets = new Listing { "preview"; "development" }
+  }
+
+  // A secret the build needs. `encrypted` round-trips through the API, so
+  // formae sees no drift on later syncs; `sensitive` is never readable again
+  // and would drift on every one.
+  new vercel.EnvironmentVariable {
+    label = "session-secret"
+    projectId = app.res.id
+    key = "SESSION_SECRET"
+    value = formae.value(random.password(48, false)).opaque.setOnce
+    variableType = "encrypted"
+    targets = new Listing { "production"; "preview" }
+  }
+}
