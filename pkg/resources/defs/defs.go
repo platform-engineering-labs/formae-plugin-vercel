@@ -52,9 +52,18 @@ func All() []rest.Definition {
 func core() []rest.Definition {
 	return []rest.Definition{
 		customEnvironment(),
+		projectDomain(),
+		dnsRecord(),
+		domain(),
 		globalConfig(),
 		webhook(),
+		network(),
+		accessGroup(),
+		accessGroupProject(),
+		authToken(),
 		vcrRepository(),
+		certificate(),
+		alias(),
 	}
 }
 
@@ -112,6 +121,49 @@ func customEnvironment() rest.Definition {
 	}
 }
 
+// projectDomain — POST /v10/projects/{idOrName}/domains, item under /v9.
+// Keyed by the domain name itself, not a generated id.
+func projectDomain() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Projects::Domain",
+		Scope:          rest.ScopeProject,
+		ParentProperty: "projectId",
+		CollectionPath: "/v10/projects/{parent}/domains",
+		ItemPath:       "/v9/projects/{parent}/domains/{id}",
+		ListField:      "domains",
+		IDField:        "name",
+		Fields:         []string{"name", "gitBranch", "customEnvironmentId", "redirect", "redirectStatusCode"},
+		CreateOnly:     []string{"name"},
+	}
+}
+
+// =============================================================================
+// DNS
+// =============================================================================
+
+// dnsRecord — the least regular of the batch: create is POST /v2 and answers
+// `{"uid": …}`, update is PATCH /v1 with the record id and *no* domain in the
+// path, delete is DELETE /v2 with the domain, and the only read is the /v5
+// collection.
+func dnsRecord() rest.Definition {
+	return rest.Definition{
+		Type:              "VERCEL::DNS::Record",
+		Scope:             rest.ScopeParent,
+		ParentProperty:    "domain",
+		ParentListPath:    "/v5/domains",
+		ParentListField:   "domains",
+		CollectionPath:    "/v2/domains/{parent}/records",
+		ItemPathUpdate:    "/v1/domains/records/{id}",
+		ItemPathDelete:    "/v2/domains/{parent}/records/{id}",
+		ListField:         "records",
+		CreateIDField:     "uid",
+		ReadViaCollection: true,
+		Fields:            []string{"name", "recordType", "value", "ttl", "comment", "mxPriority", "srv"},
+		Rename:            map[string]string{"recordType": "type"},
+		CreateOnly:        []string{"name", "recordType"},
+	}
+}
+
 // =============================================================================
 // Global Config (the API's new name for Edge Config)
 // =============================================================================
@@ -151,6 +203,101 @@ func webhook() rest.Definition {
 }
 
 // =============================================================================
+// Networking
+// =============================================================================
+
+// network — Secure Compute network, POST /v1/connect/networks.
+//
+// Creation is asynchronous: the documented `status` enum is
+// create_in_progress | delete_in_progress | error | ready. The Async spec makes
+// Create return InProgress and Status() poll until the network is actually
+// usable — reporting success early would let dependent resources run against a
+// network that does not exist yet.
+func network() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Networking::Network",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v1/connect/networks",
+		ItemPath:       "/v1/connect/networks/{id}",
+		ListField:      "networks",
+		Fields:         []string{"name", "cidr", "region", "awsAvailabilityZoneIds"},
+		CreateOnly:     []string{"cidr", "region", "awsAvailabilityZoneIds"},
+		Async: &rest.AsyncSpec{
+			StatusField: "status",
+			Pending:     []string{"create_in_progress", "delete_in_progress"},
+			Failed:      []string{"error"},
+			Ready:       []string{"ready"},
+		},
+	}
+}
+
+// =============================================================================
+// Access groups
+// =============================================================================
+
+// accessGroup — POST /v1/access-groups. Two oddities: the id is
+// `accessGroupId`, not `id`, and the update verb is POST, not PATCH.
+//
+// `projects` and `membersToAdd` are accepted on create but the read response
+// only returns counts, so managing them here would drift on every sync. They
+// are modelled as their own resources instead (ProjectAssignment below, and
+// membership, which is still pending).
+func accessGroup() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::AccessGroups::AccessGroup",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v1/access-groups",
+		ItemPath:       "/v1/access-groups/{id}",
+		UpdateMethod:   "POST",
+		IDField:        "accessGroupId",
+		Fields:         []string{"name"},
+	}
+}
+
+// accessGroupProject — POST /v1/access-groups/{accessGroupIdOrName}/projects.
+// Keyed by the project id rather than an id of its own.
+func accessGroupProject() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::AccessGroups::ProjectAssignment",
+		Scope:          rest.ScopeParent,
+		ParentProperty: "accessGroupId",
+		ParentListPath: "/v1/access-groups",
+		ParentIDField:  "accessGroupId",
+		CollectionPath: "/v1/access-groups/{parent}/projects",
+		ItemPath:       "/v1/access-groups/{parent}/projects/{id}",
+		IDField:        "projectId",
+		Fields:         []string{"projectId", "role"},
+		CreateOnly:     []string{"projectId"},
+	}
+}
+
+// =============================================================================
+// Auth
+// =============================================================================
+
+// authToken — POST /v3/user/tokens, wrapped as {"token": {...}}. Read is /v5,
+// delete is /v3, list is /v6: three versions for one resource.
+//
+// The token's actual value (`bearerToken`) is returned exactly once, at
+// creation, and is deliberately not modelled: formae would report it as drift
+// on the very next read.
+func authToken() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Auth::Token",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v3/user/tokens",
+		ItemPath:       "/v5/user/tokens/{id}",
+		ItemPathDelete: "/v3/user/tokens/{id}",
+		ListPath:       "/v6/user/tokens",
+		ListField:      "tokens",
+		Unwrap:         "token",
+		Fields:         []string{"name", "expiresAt", "projectId"},
+		CreateOnly:     []string{"name", "expiresAt", "projectId"},
+		NoUpdate:       true,
+	}
+}
+
+// =============================================================================
 // Container registry
 // =============================================================================
 
@@ -179,6 +326,84 @@ func vcrRepository() rest.Definition {
 		ListField:      "repositories",
 		Fields:         []string{"name"},
 		CreateOnly:     []string{"name"},
+		NoUpdate:       true,
+	}
+}
+
+// domain — POST /v7/domains registers a domain on the account or team.
+//
+// This is the step that DNS::Record and Projects::Domain both presuppose:
+// records need a domain the account holds, and attaching a domain to a project
+// does not bring the domain itself under management.
+//
+// Addressed by name everywhere — GET /v5/domains/{domain},
+// DELETE /v6/domains/{domain} — so the native id is the domain name, not the
+// `dom_…` id the object also carries.
+//
+// NoUpdate is deliberate. PATCH /v3/domains/{domain} is op-based
+// (`{op, zone, renew, customNameservers}` or `{op, destination}` to move the
+// domain out), the `op` values are not enumerated in the spec, and the 200 has
+// no response body — nothing that can be driven declaratively. Only `name` is
+// modelled, and it is createOnly, so there is nothing to update: everything
+// else the domain object returns (nameservers, verified, expiresAt) is
+// Vercel's to decide, not the forma's.
+func domain() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Domains::Domain",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v7/domains",
+		ItemPath:       "/v5/domains/{id}",
+		ItemPathDelete: "/v6/domains/{id}",
+		ListPath:       "/v5/domains",
+		ListField:      "domains",
+		Unwrap:         "domain",
+		IDField:        "name",
+		Fields:         []string{"name"},
+		CreateOnly:     []string{"name"},
+		NoUpdate:       true,
+	}
+}
+
+// =============================================================================
+// Certificates
+// =============================================================================
+
+// certificate — POST /v8/certs issues a Vercel-managed certificate for a set
+// of common names. This is the *issue* endpoint; uploading your own certificate
+// is the separate PUT flow, declared as VERCEL::Certs::UploadedCertificate.
+func certificate() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Certs::Certificate",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v8/certs",
+		ItemPath:       "/v8/certs/{id}",
+		Fields:         []string{"cns"},
+		CreateOnly:     []string{"cns"},
+		NoUpdate:       true,
+	}
+}
+
+// =============================================================================
+// Aliases
+// =============================================================================
+
+// alias — created under a deployment (POST /v2/deployments/{id}/aliases) but
+// read, listed and deleted account-wide, so the deployment is a create-time
+// path input rather than part of the native id. The create response keys the id
+// as `uid`.
+func alias() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Deployments::Alias",
+		Scope:          rest.ScopeAccount,
+		CreatePath:     "/v2/deployments/{prop:deploymentId}/aliases",
+		CollectionPath: "/v4/aliases",
+		ItemPath:       "/v4/aliases/{id}",
+		ItemPathDelete: "/v2/aliases/{id}",
+		ListField:      "aliases",
+		IDField:        "uid",
+		CreateIDField:  "uid",
+		Fields:         []string{"alias", "redirect", "deploymentId"},
+		CreateOnly:     []string{"alias", "redirect", "deploymentId"},
 		NoUpdate:       true,
 	}
 }

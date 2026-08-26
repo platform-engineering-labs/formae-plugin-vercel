@@ -510,7 +510,7 @@ func (r *Resource) List(ctx context.Context, _ *resource.ListRequest) (*resource
 	if err != nil {
 		// A 401/403/404 is an answer, not a failure: a token scoped away from
 		// access groups genuinely sees none, and one such type must not sink
-		// discovery of the other types.
+		// discovery of the other twenty-two.
 		if vercelapi.IsPermissionDenied(err) || vercelapi.IsNotFound(err) {
 			return &resource.ListResult{NativeIDs: []string{}}, nil
 		}

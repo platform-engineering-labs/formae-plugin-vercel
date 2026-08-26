@@ -212,10 +212,6 @@ jobs:
           # so that value must never reach it.
           REQUESTED_VERSION: ${{ inputs.formae_version || matrix.formae_version }}
           TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsegment,flagsdkkey' }}
-          # Every fixture on main is expected to pass now: the resources whose
-          # fixtures failed for want of a plan or token scope live on the
-          # unverified-resources branch, not here.
-          #
           # Discovery covers one fixture more than CRUD does.
           # VERCEL::FeatureFlags::Settings is a singleton that exists for
           # every project, so it can never read as absent and the CRUD

@@ -1,0 +1,30 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — in-place update of a drain. `name` and `delivery` are
+// mutable; `projects`, `schemas` and `source` are createOnly.
+// See drain.pkl for the plan limitation that blocks this today.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+import "@vercel/core/drains.pkl"
+
+import "./config/vars.pkl" as v
+
+forma {
+  v.stack
+  v.target
+
+  new drains.Drain {
+    label = "plugin-sdk-test-drain"
+    name = "\(v.prefix)-\(v.shortID)-upd"        // CHANGED
+    projects = "all"
+    schemas = new Mapping {
+      ["log"] = new drains.DrainSchema { version = "v1" }
+    }
+    delivery = new drains.DrainHTTPDelivery {
+      endpoint = "https://example.com/formae-sdk-test/\(v.testRunID)"
+      encoding = "json"                          // CHANGED
+    }
+  }
+}
