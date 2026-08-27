@@ -75,7 +75,11 @@ func (p *Plugin) LabelConfig() model.LabelConfig {
 			"VERCEL::FeatureFlags::Segment":         "$.slug",
 			"VERCEL::FeatureFlags::SDKKey":          "$.keyLabel",
 			// A membership has no name of its own, and settings are identified
-			"VERCEL::FeatureFlags::Settings": "$.projectId",
+			"VERCEL::FeatureFlags::Settings":          "$.projectId",
+			"VERCEL::Deployments::Alias":              "$.alias",
+			"VERCEL::AccessGroups::ProjectAssignment": "$.projectId",
+			"VERCEL::Certs::UploadedCertificate":      "$.id",
+			"VERCEL::Projects::Member":                "$.uid",
 		},
 	}
 }

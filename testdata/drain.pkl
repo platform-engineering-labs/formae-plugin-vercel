@@ -1,0 +1,37 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::Drains::Drain, in its log-drain shape.
+//
+// Creating a drain is free; delivery is billed per GB and this drain never
+// receives traffic during the test. The endpoint is never called by the
+// harness — Vercel only delivers when a matching event fires.
+//
+// KNOWN TO FAIL on plans without drains. Verified 2026-08-13:
+//   Create -> 403 forbidden: "Drains are not available for team <id>"
+// Plan-gated, not a plugin defect. An earlier 400 here ("`delivery` missing
+// required property `headers`") WAS a real defect and is fixed.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+import "@vercel/core/drains.pkl"
+
+import "./config/vars.pkl" as v
+
+forma {
+  v.stack
+  v.target
+
+  new drains.Drain {
+    label = "plugin-sdk-test-drain"
+    name = "\(v.prefix)-\(v.shortID)"
+    projects = "all"
+    schemas = new Mapping {
+      ["log"] = new drains.DrainSchema { version = "v1" }
+    }
+    delivery = new drains.DrainHTTPDelivery {
+      endpoint = "https://example.com/formae-sdk-test/\(v.testRunID)"
+      encoding = "ndjson"
+    }
+  }
+}

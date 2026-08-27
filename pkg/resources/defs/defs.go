@@ -54,6 +54,12 @@ func core() []rest.Definition {
 		customEnvironment(),
 		projectDomain(),
 		dnsRecord(),
+		domain(),
+		network(),
+		accessGroup(),
+		accessGroupProject(),
+		authToken(),
+		alias(),
 		globalConfig(),
 		webhook(),
 		vcrRepository(),
@@ -241,5 +247,143 @@ func dnsRecord() rest.Definition {
 		// updatable nor createOnly could never be changed at all, and formae
 		// would attempt an update the plugin has to refuse.
 		CreateOnly: []string{"name", "recordType", "value", "ttl", "comment", "mxPriority", "srv"},
+	}
+}
+
+// domain — POST /v7/domains registers a domain on the account or team.
+//
+// This is the step that DNS::Record and Projects::Domain both presuppose:
+// records need a domain the account holds, and attaching a domain to a project
+// does not bring the domain itself under management.
+//
+// Addressed by name everywhere — GET /v5/domains/{domain},
+// DELETE /v6/domains/{domain} — so the native id is the domain name, not the
+// `dom_…` id the object also carries.
+//
+// NoUpdate is deliberate. PATCH /v3/domains/{domain} is op-based
+// (`{op, zone, renew, customNameservers}` or `{op, destination}` to move the
+// domain out), the `op` values are not enumerated in the spec, and the 200 has
+// no response body — nothing that can be driven declaratively. Only `name` is
+// modelled, and it is createOnly, so there is nothing to update: everything
+// else the domain object returns (nameservers, verified, expiresAt) is
+// Vercel's to decide, not the forma's.
+func domain() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Domains::Domain",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v7/domains",
+		ItemPath:       "/v5/domains/{id}",
+		ItemPathDelete: "/v6/domains/{id}",
+		ListPath:       "/v5/domains",
+		ListField:      "domains",
+		Unwrap:         "domain",
+		IDField:        "name",
+		Fields:         []string{"name"},
+		CreateOnly:     []string{"name"},
+		NoUpdate:       true,
+	}
+}
+
+// network — Secure Compute network, POST /v1/connect/networks.
+//
+// Creation is asynchronous: the documented `status` enum is
+// create_in_progress | delete_in_progress | error | ready. The Async spec makes
+// Create return InProgress and Status() poll until the network is actually
+// usable — reporting success early would let dependent resources run against a
+// network that does not exist yet.
+func network() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Networking::Network",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v1/connect/networks",
+		ItemPath:       "/v1/connect/networks/{id}",
+		ListField:      "networks",
+		Fields:         []string{"name", "cidr", "region", "awsAvailabilityZoneIds"},
+		CreateOnly:     []string{"cidr", "region", "awsAvailabilityZoneIds"},
+		Async: &rest.AsyncSpec{
+			StatusField: "status",
+			Pending:     []string{"create_in_progress", "delete_in_progress"},
+			Failed:      []string{"error"},
+			Ready:       []string{"ready"},
+		},
+	}
+}
+
+// accessGroup — POST /v1/access-groups. Two oddities: the id is
+// `accessGroupId`, not `id`, and the update verb is POST, not PATCH.
+//
+// `projects` and `membersToAdd` are accepted on create but the read response
+// only returns counts, so managing them here would drift on every sync. They
+// are modelled as their own resources instead (ProjectAssignment below, and
+// membership, which is still pending).
+func accessGroup() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::AccessGroups::AccessGroup",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v1/access-groups",
+		ItemPath:       "/v1/access-groups/{id}",
+		UpdateMethod:   "POST",
+		IDField:        "accessGroupId",
+		Fields:         []string{"name"},
+	}
+}
+
+// accessGroupProject — POST /v1/access-groups/{accessGroupIdOrName}/projects.
+// Keyed by the project id rather than an id of its own.
+func accessGroupProject() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::AccessGroups::ProjectAssignment",
+		Scope:          rest.ScopeParent,
+		ParentProperty: "accessGroupId",
+		ParentListPath: "/v1/access-groups",
+		ParentIDField:  "accessGroupId",
+		CollectionPath: "/v1/access-groups/{parent}/projects",
+		ItemPath:       "/v1/access-groups/{parent}/projects/{id}",
+		IDField:        "projectId",
+		Fields:         []string{"projectId", "role"},
+		CreateOnly:     []string{"projectId"},
+	}
+}
+
+// authToken — POST /v3/user/tokens, wrapped as {"token": {...}}. Read is /v5,
+// delete is /v3, list is /v6: three versions for one resource.
+//
+// The token's actual value (`bearerToken`) is returned exactly once, at
+// creation, and is deliberately not modelled: formae would report it as drift
+// on the very next read.
+func authToken() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Auth::Token",
+		Scope:          rest.ScopeAccount,
+		CollectionPath: "/v3/user/tokens",
+		ItemPath:       "/v5/user/tokens/{id}",
+		ItemPathDelete: "/v3/user/tokens/{id}",
+		ListPath:       "/v6/user/tokens",
+		ListField:      "tokens",
+		Unwrap:         "token",
+		Fields:         []string{"name", "expiresAt", "projectId"},
+		CreateOnly:     []string{"name", "expiresAt", "projectId"},
+		NoUpdate:       true,
+	}
+}
+
+// alias — created under a deployment (POST /v2/deployments/{id}/aliases) but
+// read, listed and deleted account-wide, so the deployment is a create-time
+// path input rather than part of the native id. The create response keys the id
+// as `uid`.
+func alias() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Deployments::Alias",
+		Scope:          rest.ScopeAccount,
+		CreatePath:     "/v2/deployments/{prop:deploymentId}/aliases",
+		CollectionPath: "/v4/aliases",
+		ItemPath:       "/v4/aliases/{id}",
+		ItemPathDelete: "/v2/aliases/{id}",
+		ListField:      "aliases",
+		IDField:        "uid",
+		CreateIDField:  "uid",
+		Fields:         []string{"alias", "redirect", "deploymentId"},
+		CreateOnly:     []string{"alias", "redirect", "deploymentId"},
+		NoUpdate:       true,
 	}
 }
