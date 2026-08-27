@@ -28,7 +28,7 @@ on:
           TEST goes through make, which eats a bare $ and would silently turn
           an anchored /…$/ pattern into one that matches nothing.'
         required: false
-        default: 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsegment,flagsdkkey'
+        default: 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsegment,flagsdkkey,dnsrecord,projectdomain'
         type: string
 
 jobs:
@@ -211,7 +211,7 @@ jobs:
           # The harness parses FORMAE_VERSION with semver and rejects "latest",
           # so that value must never reach it.
           REQUESTED_VERSION: ${{ inputs.formae_version || matrix.formae_version }}
-          TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsegment,flagsdkkey' }}
+          TEST_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsegment,flagsdkkey,dnsrecord,projectdomain' }}
           # Every fixture on main is expected to pass now: the resources whose
           # fixtures failed for want of a plan or token scope live on the
           # unverified-resources branch, not here.
@@ -221,7 +221,7 @@ jobs:
           # every project, so it can never read as absent and the CRUD
           # phase's out-of-band-delete step cannot pass. Its discovery
           # does pass, and dropping the fixture entirely would lose that.
-          DISCOVERY_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsegment,flagsdkkey,flagsettings' }}
+          DISCOVERY_FILTER: ${{ inputs.test_filter || 'project,envvar,globalconfig,webhook,vcrrepository,route,customenv,featureflag,flagsegment,flagsdkkey,dnsrecord,projectdomain,flagsettings' }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::notice title=Conformance skipped::VERCEL_TOKEN is not set on this repository. Add it under Settings -> Secrets and variables -> Actions."

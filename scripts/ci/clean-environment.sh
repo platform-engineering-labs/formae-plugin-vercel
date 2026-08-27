@@ -97,4 +97,34 @@ for id in ${wh_ids}; do
   api DELETE "/v1/webhooks/${id}" >/dev/null || true
 done
 
+# DNS records under the test domain.
+#
+# Scoped hard, on purpose. Only records whose *name* starts with the test
+# prefix are ever considered: the domain itself is never touched, and neither
+# are its real records — the CAA set and the apex/wildcard ALIAS entries carry
+# no name and cannot match. A failed DNS fixture otherwise leaves records
+# behind in a domain somebody actually uses.
+TEST_DOMAIN="${VERCEL_TEST_DOMAIN:-oberlayer.com}"
+if [ -n "${TEST_DOMAIN}" ]; then
+  echo "  dns records under ${TEST_DOMAIN}..."
+  ids=$(api GET "/v5/domains/${TEST_DOMAIN}/records?limit=100" \
+    | jq -r '.records[]? | select(.name != null and (.name | startswith("sdk-"))) | .id' || true)
+  for id in ${ids}; do
+    echo "    DELETE dns-record ${id}"
+    api DELETE "/v2/domains/${TEST_DOMAIN}/records/${id}" >/dev/null || true
+  done
+fi
+
+# Certificates are deliberately not reaped: they cannot be.
+#
+#   DELETE /v8/certs/{id}
+#   400 SSL Certificates provided by the system cannot be deleted.
+#
+# Vercel issues a certificate itself when a domain is attached to a project,
+# and refuses to delete anything it issued. Test runs therefore leave
+# certificates for sdk-*.<test domain> behind. They are harmless — the names
+# they cover stop resolving as soon as the fixture's project is destroyed, and
+# they expire on their own — but they do accumulate, so expect a growing list
+# under Settings -> Certificates on an account used for conformance runs.
+
 echo "clean-environment.sh: done"

@@ -36,6 +36,12 @@ teamId = read?("env:VERCEL_TEAM_ID")
 /// harness's discovery window does not have to walk a large account.
 projectId = read?("env:VERCEL_PROJECT_ID")
 
+/// Apex domain the account owns, used by the domain, DNS and certificate
+/// fixtures. These cannot run without one: a DNS record needs a zone Vercel is
+/// authoritative for, and a project domain needs a name the account controls.
+/// Override with VERCEL_TEST_DOMAIN to run them against a different account.
+testDomain = read?("env:VERCEL_TEST_DOMAIN") ?? "oberlayer.com"
+
 /// Optional API base-URL override. Set VERCEL_BASE_URL to point the plugin at a
 /// recording proxy: the conformance harness reports a failed apply only as
 /// "terminal state: Failed", discarding the plugin's StatusMessage, so the

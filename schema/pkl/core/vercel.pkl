@@ -460,3 +460,116 @@ class VCRRepository extends formae.Resource {
     projectId: String|formae.Resolvable
 }
 
+// =============================================================================
+// VERCEL::Projects::Domain
+// =============================================================================
+
+/// A domain attached to a project.
+/// Maps to `POST /v10/projects/{idOrName}/domains`.
+///
+/// Keyed by the domain name itself. Adding a custom domain requires a paid
+/// plan; on Hobby the API answers `custom_domain_needs_upgrade`.
+@formae.ResourceHint {
+    type = "VERCEL::Projects::Domain"
+    identifier = "$.id"
+    parent = "VERCEL::Projects::Project"
+    discoverable = true
+}
+class ProjectDomain extends formae.Resource {
+    fixed hidden type: String = "VERCEL::Projects::Domain"
+
+    /// Owning project id or name. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    projectId: String|formae.Resolvable
+
+    /// The domain name. Immutable — it is the resource's identity.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    name: String
+
+    /// Git branch to bind the domain to. Mutually exclusive with `redirect`.
+    @formae.FieldHint {}
+    gitBranch: String? = null
+
+    /// Custom environment to bind the domain to.
+    @formae.FieldHint {}
+    customEnvironmentId: String? = null
+
+    /// Redirect target domain. Mutually exclusive with `gitBranch`.
+    @formae.FieldHint {}
+    redirect: String? = null
+
+    /// HTTP status used for the redirect.
+    @formae.FieldHint {}
+    redirectStatusCode: Int(this == 301 || this == 302 || this == 307 || this == 308)? = null
+}
+
+// =============================================================================
+// VERCEL::DNS::Record
+// =============================================================================
+
+/// SRV record payload.
+@formae.SubResourceHint {}
+class SRVRecord extends formae.SubResource {
+    @formae.FieldHint {}
+    priority: Int
+
+    @formae.FieldHint {}
+    weight: Int
+
+    @formae.FieldHint {}
+    port: Int
+
+    @formae.FieldHint {}
+    target: String
+}
+
+/// A DNS record on a domain Vercel manages.
+/// Maps to `POST /v2/domains/{domain}/records`.
+///
+/// The API spells the record type `type`, which `formae.Resource` reserves, so
+/// it is declared here as `recordType` and renamed on the wire.
+@formae.ResourceHint {
+    type = "VERCEL::DNS::Record"
+    identifier = "$.id"
+    discoverable = true
+}
+class DNSRecord extends formae.Resource {
+    fixed hidden type: String = "VERCEL::DNS::Record"
+
+    /// Domain the record belongs to. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    domain: String
+
+    /// Subdomain, or an empty string for the apex. Immutable.
+    ///
+    /// Not marked `requiredOnCreate`: an apex record is `name = ""`, and
+    /// formae's required-field check treats an empty string as absent. The
+    /// field is still non-nullable with no default, so PKL makes you write it.
+    @formae.FieldHint { createOnly = true }
+    name: String
+
+    /// Record type. Immutable.
+    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    recordType: "A"|"AAAA"|"ALIAS"|"CAA"|"CNAME"|"HTTPS"|"MX"|"NS"|"SRV"|"TXT"
+
+    /// Record value. Required for every type except SRV, which uses `srv`.
+    @formae.FieldHint { createOnly = true }
+    value: String? = null
+
+    /// Time to live in seconds, 60 to 2147483647.
+    @formae.FieldHint { createOnly = true }
+    ttl: Int? = null
+
+    /// Priority, for MX records.
+    @formae.FieldHint { createOnly = true }
+    mxPriority: Int? = null
+
+    /// SRV payload, for SRV records.
+    @formae.FieldHint { createOnly = true }
+    srv: SRVRecord? = null
+
+    /// Free-text note, max 500 characters.
+    @formae.FieldHint { createOnly = true }
+    comment: String? = null
+}
+

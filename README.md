@@ -21,11 +21,15 @@ Every type below passes the conformance suite against a live Vercel account.
 | `VERCEL::FeatureFlags::Segment` | Reusable audiences for flag rules |
 | `VERCEL::FeatureFlags::SDKKey` | Flags SDK keys, per environment |
 | `VERCEL::FeatureFlags::Settings` | Per-project feature flag configuration |
+| `VERCEL::Projects::Domain` | A domain or subdomain attached to a project |
+| `VERCEL::DNS::Record` | DNS records in a domain Vercel is authoritative for. No in-place update — the API's PATCH replaces the record and reissues its id, so a change is a replace |
 
-Twelve further types — domains, DNS records, certificates, drains, access
-groups, user tokens, aliases, Secure Compute networks and project members —
+Ten further types — the domain registration itself, certificates, drains,
+access groups, user tokens, aliases, Secure Compute networks and project
+members —
 are implemented but **not on main**: three fail against a live account for want
-of a plan or token scope, and nine have never been run against the API at all.
+of a plan or token scope, one cannot be destroyed at all, and the rest have
+never been run against the API.
 They live on the `unverified-resources` branch with an open pull request, along
 with what each one needs to be provable.
 

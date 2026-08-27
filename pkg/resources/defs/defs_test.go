@@ -165,3 +165,31 @@ func TestRenamesAreConsistent(t *testing.T) {
 		}
 	}
 }
+
+// A parent-scoped resource whose paths take a *name* must say so. Vercel's
+// domain objects carry both an opaque `id` and a `name`, and every DNS record
+// path takes the name — so defaulting ParentIDField to "id" made discovery walk
+// paths built from `Qmb4E6…` and quietly find nothing, while Read stayed healthy
+// because it takes the domain out of the native id.
+//
+// The general lesson, which is why this is a test and not a comment: a resource
+// can be perfectly readable and wholly undiscoverable, and only the discovery
+// phase notices.
+func TestDNSRecord_EnumeratesParentsByName(t *testing.T) {
+	var def *rest.Definition
+	for _, d := range All() {
+		if d.Type == "VERCEL::DNS::Record" {
+			c := d
+			def = &c
+		}
+	}
+	if def == nil {
+		t.Skip("VERCEL::DNS::Record is not declared on this branch")
+	}
+	if def.ParentIDField != "name" {
+		t.Errorf("ParentIDField = %q, want name: record paths take the domain name, not its id", def.ParentIDField)
+	}
+	if !strings.Contains(def.CollectionPath, "{parent}") {
+		t.Errorf("CollectionPath = %q, expected a {parent} segment", def.CollectionPath)
+	}
+}

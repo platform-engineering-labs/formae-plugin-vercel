@@ -52,6 +52,8 @@ func All() []rest.Definition {
 func core() []rest.Definition {
 	return []rest.Definition{
 		customEnvironment(),
+		projectDomain(),
+		dnsRecord(),
 		globalConfig(),
 		webhook(),
 		vcrRepository(),
@@ -180,5 +182,64 @@ func vcrRepository() rest.Definition {
 		Fields:         []string{"name"},
 		CreateOnly:     []string{"name"},
 		NoUpdate:       true,
+	}
+}
+
+// projectDomain — POST /v10/projects/{idOrName}/domains, item under /v9.
+// Keyed by the domain name itself, not a generated id.
+func projectDomain() rest.Definition {
+	return rest.Definition{
+		Type:           "VERCEL::Projects::Domain",
+		Scope:          rest.ScopeProject,
+		ParentProperty: "projectId",
+		CollectionPath: "/v10/projects/{parent}/domains",
+		ItemPath:       "/v9/projects/{parent}/domains/{id}",
+		ListField:      "domains",
+		IDField:        "name",
+		Fields:         []string{"name", "gitBranch", "customEnvironmentId", "redirect", "redirectStatusCode"},
+		CreateOnly:     []string{"name"},
+	}
+}
+
+// dnsRecord — the least regular of the batch: create is POST /v2 and answers
+// `{"uid": …}`, update is PATCH /v1 with the record id and *no* domain in the
+// path, delete is DELETE /v2 with the domain, and the only read is the /v5
+// collection.
+func dnsRecord() rest.Definition {
+	return rest.Definition{
+		Type:            "VERCEL::DNS::Record",
+		Scope:           rest.ScopeParent,
+		ParentProperty:  "domain",
+		ParentListPath:  "/v5/domains",
+		ParentListField: "domains",
+		// Parents are keyed by name, not by id. A domain object carries both —
+		// `id` is an opaque `Qmb4E6…` handle, `name` is "example.com" — and every
+		// record path takes the name. Defaulting to `id` made discovery walk
+		// /v2/domains/Qmb4E6…/records and find nothing, while Read stayed
+		// healthy because it takes the domain from the native id instead. A
+		// resource can be perfectly readable and wholly undiscoverable.
+		ParentIDField:     "name",
+		CollectionPath:    "/v2/domains/{parent}/records",
+		ItemPathUpdate:    "/v1/domains/records/{id}",
+		ItemPathDelete:    "/v2/domains/{parent}/records/{id}",
+		ListField:         "records",
+		CreateIDField:     "uid",
+		ReadViaCollection: true,
+		// No in-place update, despite the API documenting a PATCH.
+		//
+		// PATCH /v1/domains/records/{id} does not edit the record: it replaces
+		// it and answers with a different `rec_…` id. formae requires a native
+		// id to be stable across an update — the conformance harness rejects a
+		// change outright ("NativeID should NOT change during update") — so an
+		// endpoint that reissues the id is, in formae's terms, not an update at
+		// all. NoUpdate makes a change destroy and recreate the record, which
+		// is what the API does anyway, and keeps the id honest.
+		NoUpdate: true,
+		Fields:   []string{"name", "recordType", "value", "ttl", "comment", "mxPriority", "srv"},
+		Rename:   map[string]string{"recordType": "type"},
+		// Every field, because there is no update: a field that is neither
+		// updatable nor createOnly could never be changed at all, and formae
+		// would attempt an update the plugin has to refuse.
+		CreateOnly: []string{"name", "recordType", "value", "ttl", "comment", "mxPriority", "srv"},
 	}
 }

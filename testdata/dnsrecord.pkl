@@ -1,0 +1,31 @@
+// © 2026 Platform Engineering Labs Inc.
+// SPDX-License-Identifier: FSL-1.1-ALv2
+//
+// Conformance test — VERCEL::DNS::Record.
+//
+// Needs an apex domain the account owns, with Vercel authoritative for it
+// (`serviceType: zeit.world`, nameservers ns1/ns2.vercel-dns.com). Set
+// VERCEL_TEST_DOMAIN to point at a different one.
+//
+// The record name carries the test run id, so this fixture only ever creates
+// and deletes names it owns. The domain's real records — Vercel's CAA set and
+// the apex/wildcard ALIAS entries — are never touched.
+
+amends "@formae/forma.pkl"
+import "@vercel/core/vercel.pkl"
+
+import "./config/vars.pkl" as v
+
+forma {
+  v.stack
+  v.target
+
+  new vercel.DNSRecord {
+    label = "plugin-sdk-test-dns"
+    domain = v.testDomain
+    name = "sdk-test-\(v.shortID)"
+    recordType = "TXT"
+    value = "formae-plugin-vercel conformance test"
+    ttl = 60
+  }
+}
