@@ -30,9 +30,23 @@
 amends "@formae/forma.pkl"
 
 import "@formae/formae.pkl"
-import "@formae/ext/random.pkl"
 import "@vercel/core/vercel.pkl"
 import "@supabase/supabase.pkl"
+
+local appStack = new formae.Stack {
+  label = "default"
+  description = "Supabase database and Vercel frontend, wired together"
+}
+
+// formae draws the database password and delivers it to every property bound
+// to it, in one apply. No `rotation`: `dbPass` is create-only, so a rotating
+// generator bound here would replace the project rather than change its
+// password.
+local dbPassword = new formae.PasswordGenerator {
+  label = "app-database-password"
+  stack = appStack.res
+  length = 32
+}
 
 // ---------------------------------------------------------------------------
 // Supabase: the database, and a publishable key for the browser
@@ -47,9 +61,9 @@ local db = new supabase.Project {
   organizationId = "your-org-id"
   region = "eu-central-1"
 
-  // Never a literal. `setOnce` generates it on first apply and keeps it out of
-  // the forma; `opaque` keeps it out of logs and diffs.
-  dbPass = formae.value(random.password(32, false)).opaque.setOnce
+  // Never a literal — a generator binding. formae draws the value, keeps it
+  // out of this file and out of any plan, and hashes it at rest.
+  dbPass = dbPassword.gen.value
 
   plan = "free"
 }
@@ -84,10 +98,8 @@ local site = new vercel.Project {
 }
 
 forma {
-  new formae.Stack {
-    label = "default"
-    description = "Supabase database and Vercel frontend, wired together"
-  }
+  appStack
+  dbPassword
 
   // One target per namespace. Each plugin reads its own credentials from the
   // environment; neither token appears here.

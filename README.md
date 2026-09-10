@@ -108,6 +108,20 @@ GitHub account first`, for public repositories as much as private ones. See
 never returns a `sensitive` value, so a Forma-managed one reports drift on every
 sync and is not discoverable. `encrypted` round-trips.
 
+**An environment variable is a first-class secret.** Its value is read back
+decrypted on every plugin call, so other resources reference it through the
+uniform accessor — `envVar.res.secretValue`, or `.json("path")` to reach into a
+JSON payload — rather than holding a copy. A `sensitive` variable has no value
+to resolve.
+
+**Let formae draw and rotate the value.** Bind the variable to a generator
+instead of writing a secret into the forma: `value = pw.gen.value` against a
+`formae.PasswordGenerator` in the same stack. With no `rotation` the value is
+drawn once; with one, formae turns it over on schedule and moves the variable
+with it. `UploadedCertificate.key` takes the private half of a
+`formae.KeyPairGenerator` the same way. See
+[`examples/full-stack/`](examples/full-stack/).
+
 **`Project.name` and `Project.gitRepository` are immutable.** Changing either
 replaces the project, which changes every generated deployment URL.
 

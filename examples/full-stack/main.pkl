@@ -27,11 +27,27 @@ local site = new vercel.Project {
   nodeVersion = "22.x"
 }
 
-forma {
-  new formae.Stack {
-    label = "shop"
-    description = "Project, environments, config and a webhook"
+local appStack = new formae.Stack {
+  label = "shop"
+  description = "Project, environments, config and a webhook"
+}
+
+// formae draws the session secret, delivers it to every property bound to it,
+// and redraws it every thirty days — unattended, moving the secret and the
+// environment variable holding it together. Drop `rotation` and it is drawn
+// once and never changes.
+local sessionSecret = new formae.PasswordGenerator {
+  label = "session-secret-password"
+  stack = appStack.res
+  length = 32
+  rotation = new formae.RotationSpec {
+    every = 30.d
   }
+}
+
+forma {
+  appStack
+  sessionSecret
 
   new formae.Target {
     label = "vercel"
@@ -65,18 +81,17 @@ forma {
 
   // A secret. `encrypted` still round-trips through the API, so formae sees no
   // drift; `sensitive` would be write-only and would report drift on every
-  // sync. Wrapping the value keeps it out of state and logs.
+  // sync.
   //
-  // To have formae generate the secret instead of reading it from the
-  // environment, import "@formae/ext/random.pkl" and use:
-  //   value = formae.value(random.password(32, false)).opaque.setOnce
-  // That form only evaluates under the formae agent — bare `pkl eval` refuses
-  // the libext: resource it reads — which is why this example uses an env var.
+  // The value is the generator's output, not a literal and not something read
+  // out of the shell: nothing here ever holds the secret, and rotating it is
+  // the generator's `rotation`, not a redeploy. To supply one yourself instead,
+  // wrap it — `value = formae.value(read("env:SHOP_SESSION_SECRET")).opaque`.
   new vercel.EnvironmentVariable {
     label = "session-secret"
     projectId = site.res.id
     key = "SESSION_SECRET"
-    value = formae.value(read?("env:SHOP_SESSION_SECRET") ?? "replace-me").opaque.setOnce
+    value = sessionSecret.gen.value
     variableType = "encrypted"
     targets = new Listing { "production" }
   }
