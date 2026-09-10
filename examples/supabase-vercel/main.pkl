@@ -1,4 +1,10 @@
 /*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/*
  * A frontend on Vercel talking to a database on Supabase, as one forma.
  *
  * This is the case two plugins exist to serve: the Supabase project and its API

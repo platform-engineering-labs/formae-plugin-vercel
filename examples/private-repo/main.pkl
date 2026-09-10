@@ -1,4 +1,10 @@
 /*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/*
  * Deploying a private repository.
  *
  * A private repo needs no special handling in the forma — no deploy key, no

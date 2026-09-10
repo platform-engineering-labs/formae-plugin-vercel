@@ -1,4 +1,10 @@
 /*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/*
  * A whole project from one apply.
  *
  * Project, a staging custom environment, environment variables wired to both,

@@ -22,7 +22,7 @@ BINARY := $(PLUGIN_NAME)
 PLUGIN_BASE_DIR := $(HOME)/.pel/formae/plugins
 INSTALL_DIR := $(PLUGIN_BASE_DIR)/$(PLUGIN_NAME)/v$(PLUGIN_VERSION)
 
-.PHONY: all build test test-unit test-integration lint verify-schema clean install help clean-environment conformance-test conformance-test-crud conformance-test-discovery
+.PHONY: all build test test-unit test-integration lint lint-reuse verify-schema clean install help clean-environment conformance-test conformance-test-crud conformance-test-discovery
 
 all: build
 
@@ -60,6 +60,12 @@ test-integration:
 ## lint: Run golangci-lint
 lint:
 	golangci-lint run
+
+## lint-reuse: Check REUSE license compliance
+## Every file must declare its copyright and licence, inline or via REUSE.toml.
+## CI enforces this; locally it is a no-op when the reuse tool is absent.
+lint-reuse:
+	./scripts/lint_reuse.sh
 
 ## verify-schema: Validate PKL schema files
 ## Checks that schema files are well-formed and follow formae conventions.

@@ -1,4 +1,10 @@
 /*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/*
  * Basic Example — a Vercel project and one environment variable.
  *
  * Export VERCEL_TOKEN (or VERCEL_API_TOKEN) first, then:

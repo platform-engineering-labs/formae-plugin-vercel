@@ -1,4 +1,10 @@
 /*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/*
  * Observability drains.
  *
  * Log, trace and audit-log drains are all the same endpoint — POST /v1/drains —
