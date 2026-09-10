@@ -70,14 +70,22 @@ open class ProjectResolvable extends formae.Resolvable {
 /// A production branch and deploy hooks are deliberately not modelled: neither
 /// is reachable through a documented endpoint, and this plugin uses only
 /// endpoints Vercel documents.
-class GitRepository {
+@formae.SubResourceHint {}
+class GitRepository extends formae.SubResource {
     /// Git provider hosting the repository.
-    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    ///
+    /// Not marked `requiredOnCreate`: a subresource's hints are flattened onto
+    /// the parent as `gitRepository.type`, where the agent reads them as
+    /// unconditional, and a project without a Git link is a valid state. Both
+    /// fields are non-nullable with no default, so PKL already refuses a
+    /// half-built `GitRepository` at eval time — which is where the real
+    /// enforcement belongs.
+    @formae.FieldHint { createOnly = true }
     type: "github" | "github-limited" | "gitlab" | "bitbucket" | "vercel" | "cursor-origin"
 
     /// Repository as "owner/name", e.g. "vercel/next.js". For a GitLab
     /// subgroup, the full namespace: "group/subgroup/name".
-    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    @formae.FieldHint { createOnly = true }
     repo: String
 }
 
