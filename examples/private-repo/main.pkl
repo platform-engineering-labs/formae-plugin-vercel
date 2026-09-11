@@ -1,4 +1,10 @@
 /*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/*
  * Deploying a private repository.
  *
  * A private repo needs no special handling in the forma — no deploy key, no
@@ -51,7 +57,6 @@
 amends "@formae/forma.pkl"
 
 import "@formae/formae.pkl"
-import "@formae/ext/random.pkl"
 import "@vercel/core/vercel.pkl"
 
 local app = new vercel.Project {
@@ -77,11 +82,27 @@ local app = new vercel.Project {
   }
 }
 
+local appStack = new formae.Stack {
+  label = "default"
+  description = "A Vercel project deploying from a private repository"
+}
+
+// formae draws the session secret and delivers it to every property bound to
+// it. No `rotation`, so it is drawn once and never changes — the direct
+// replacement for minting a password at PKL eval time and pinning it with
+// `setOnce`. Give it a `rotation` and formae turns it over on schedule,
+// unattended, moving the variable with it:
+//
+//   rotation = new formae.RotationSpec { every = 30.d }
+local sessionSecret = new formae.PasswordGenerator {
+  label = "session-secret-password"
+  stack = appStack.res
+  length = 48
+}
+
 forma {
-  new formae.Stack {
-    label = "default"
-    description = "A Vercel project deploying from a private repository"
-  }
+  appStack
+  sessionSecret
 
   new formae.Target {
     label = "vercel"
@@ -113,11 +134,15 @@ forma {
   // A secret the build needs. `encrypted` round-trips through the API, so
   // formae sees no drift on later syncs; `sensitive` is never readable again
   // and would drift on every one.
+  //
+  // The value is a generator binding, so the secret never appears in this
+  // file, in a plan, or in state in cleartext. Anything else needing the same
+  // credential binds to the same generator and gets the same draw.
   new vercel.EnvironmentVariable {
     label = "session-secret"
     projectId = app.res.id
     key = "SESSION_SECRET"
-    value = formae.value(random.password(48, false)).opaque.setOnce
+    value = sessionSecret.gen.value
     variableType = "encrypted"
     targets = new Listing { "production"; "preview" }
   }

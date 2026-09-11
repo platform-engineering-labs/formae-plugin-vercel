@@ -78,9 +78,10 @@ class DrainHTTPDelivery extends DrainDelivery {
     compression: ("gzip"|"none")?
 
     /// Secret used to sign delivered events. Vercel generates one when this is
-    /// left unset, so it is excluded from drift detection.
+    /// left unset, so it is excluded from drift detection. Bind it to a
+    /// `formae.PasswordGenerator` to have formae draw and rotate it instead.
     @formae.FieldHint { writeOnly = true }
-    secret: String?
+    secret: (String|formae.ValueSource)?
 }
 
 /// Deliver over OTLP/HTTP. Backs trace drains.
@@ -102,9 +103,10 @@ class DrainOTLPDelivery extends DrainDelivery {
     headers: Mapping<String, String>?
 
     /// Secret used to sign delivered events. Vercel generates one when this is
-    /// left unset, so it is excluded from drift detection.
+    /// left unset, so it is excluded from drift detection. Bind it to a
+    /// `formae.PasswordGenerator` to have formae draw and rotate it instead.
     @formae.FieldHint { writeOnly = true }
-    secret: String?
+    secret: (String|formae.ValueSource)?
 }
 
 /// Write events as objects into an S3 bucket Vercel assumes a role into.

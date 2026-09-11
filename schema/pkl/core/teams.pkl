@@ -77,7 +77,9 @@ class UploadedCertificate extends formae.Resource {
 
     /// The certificate's private key, in PEM format. Sent as the API's `key`.
     ///
-    /// Secret. Put it in a `formae.Value` rather than a literal; it is
+    /// Secret. Never a literal — take it from a secret reference or bind it to
+    /// the private half of a `formae.KeyPairGenerator`
+    /// (`key = kp.gen.privateKey`), which draws both halves as one value. It is
     /// write-only and Vercel never returns it, so formae has no way to read it
     /// back out of the account.
     @formae.FieldHint {
@@ -85,7 +87,7 @@ class UploadedCertificate extends formae.Resource {
         requiredOnCreate = true
         writeOnly = true
     }
-    key: (formae.Value|String)
+    key: (String|formae.ValueSource)
 
     /// Skip Vercel's validation of the uploaded certificate. A create-time
     /// instruction, not stored state — Vercel does not report it back. Leave

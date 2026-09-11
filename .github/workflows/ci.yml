@@ -32,6 +32,16 @@ on:
         type: string
 
 jobs:
+  # Licensing metadata is part of the deliverable for a source-available
+  # repository: every file must declare its copyright and licence, either
+  # inline or through REUSE.toml. Run `make lint-reuse` to check locally.
+  reuse-compliance:
+    name: REUSE License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@v6
+
   build:
     runs-on: ubuntu-latest
     steps:

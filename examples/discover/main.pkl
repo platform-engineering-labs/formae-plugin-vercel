@@ -1,4 +1,10 @@
 /*
+ * © 2026 Platform Engineering Labs Inc.
+ *
+ * SPDX-License-Identifier: FSL-1.1-ALv2
+ */
+
+/*
  * Discovery — the smallest possible forma.
  *
  * A bare target and nothing else. The agent will discover every Vercel

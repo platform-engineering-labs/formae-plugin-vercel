@@ -70,14 +70,22 @@ open class ProjectResolvable extends formae.Resolvable {
 /// A production branch and deploy hooks are deliberately not modelled: neither
 /// is reachable through a documented endpoint, and this plugin uses only
 /// endpoints Vercel documents.
-class GitRepository {
+@formae.SubResourceHint {}
+class GitRepository extends formae.SubResource {
     /// Git provider hosting the repository.
-    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    ///
+    /// Not marked `requiredOnCreate`: a subresource's hints are flattened onto
+    /// the parent as `gitRepository.type`, where the agent reads them as
+    /// unconditional, and a project without a Git link is a valid state. Both
+    /// fields are non-nullable with no default, so PKL already refuses a
+    /// half-built `GitRepository` at eval time — which is where the real
+    /// enforcement belongs.
+    @formae.FieldHint { createOnly = true }
     type: "github" | "github-limited" | "gitlab" | "bitbucket" | "vercel" | "cursor-origin"
 
     /// Repository as "owner/name", e.g. "vercel/next.js". For a GitLab
     /// subgroup, the full namespace: "group/subgroup/name".
-    @formae.FieldHint { createOnly = true; requiredOnCreate = true }
+    @formae.FieldHint { createOnly = true }
     repo: String
 }
 
@@ -173,8 +181,18 @@ typealias EnvironmentTarget = "production"|"preview"|"development"
 typealias EnvironmentVariableType = "plain"|"encrypted"|"sensitive"|"system"
 
 /// Resolvable handle for `VERCEL::Projects::EnvironmentVariable` outputs.
-open class EnvironmentVariableResolvable extends formae.Resolvable {
+///
+/// A Vercel environment variable is a readable secret store, so this is a
+/// scalar secret resolvable: `envVar.res.secretValue` resolves to the live
+/// value, read back from Vercel with `decrypt=true` on every plugin call, and
+/// `.json("path")` reaches into it when the value is a JSON payload.
+///
+/// That works for `plain` and `encrypted` variables. A `sensitive` variable is
+/// write-only — Vercel never returns its value — so it has nothing to resolve;
+/// reference an `encrypted` variable instead.
+open class EnvironmentVariableResolvable extends formae.ScalarSecretResolvable {
     hidden type = "VERCEL::Projects::EnvironmentVariable"
+    hidden valueProperty = "value"
 
     hidden id:  EnvironmentVariableResolvable = (this) { property = "id" }
     hidden key: EnvironmentVariableResolvable = (this) { property = "key" }
@@ -190,8 +208,14 @@ open class EnvironmentVariableResolvable extends formae.Resolvable {
     parent = "VERCEL::Projects::Project"
     discoverable = true
 }
-class EnvironmentVariable extends formae.Resource {
+class EnvironmentVariable extends formae.Secret {
     fixed hidden type: String = "VERCEL::Projects::EnvironmentVariable"
+
+    /// The property `secretValue` reads. Vercel returns the cleartext value on
+    /// a decrypted read, so the value is fetched from the provider on every
+    /// plugin call rather than cached — rotating a variable takes effect for
+    /// everything referencing it without restarting the agent.
+    hidden valueProperty = "value"
 
     local parent = this
     hidden res: EnvironmentVariableResolvable = new {
@@ -211,11 +235,17 @@ class EnvironmentVariable extends formae.Resource {
     @formae.FieldHint { requiredOnCreate = true }
     key: String
 
-    /// Variable value, max 65536 characters. Accepts a `formae.Value` so it can
-    /// be a formae-managed secret; formae resolves it to a plain string before
-    /// the plugin sees it.
+    /// Variable value, max 65536 characters.
+    ///
+    /// Accepts anything formae can supply: another resource's property, a
+    /// recorded value, a secret reference, or one of a generator's outputs.
+    /// Binding a `formae.PasswordGenerator` here is what replaces minting a
+    /// password in the forma and pinning it with `setOnce` — give the generator
+    /// a rotation cadence and formae turns the variable over unattended. The
+    /// `formae.SecretValue` arm of the alias is what marks the field opaque, so
+    /// the value is hashed at rest however it was supplied.
     @formae.FieldHint { requiredOnCreate = true }
-    value: (formae.Value|String|formae.Resolvable)
+    value: (String|formae.ValueSource)
 
     /// Storage type. Named `variableType` rather than `type` because
     /// `formae.Resource` already reserves `type`. Defaults to `encrypted`,
