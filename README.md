@@ -1,8 +1,34 @@
-# Vercel Plugin for Formae
+# Vercel plugin for formae
 
 [![CI](https://github.com/platform-engineering-labs/formae-plugin-vercel/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/platform-engineering-labs/formae-plugin-vercel/actions/workflows/ci.yml)
 
-Formae plugin for managing Vercel resources.
+Manages Vercel projects, domains, DNS records, deployment aliases, environment variables, feature flags, webhooks and more through the Vercel REST API, as Infrastructure As Code with [formae](https://github.com/platform-engineering-labs/formae).
+
+[formae](https://github.com/platform-engineering-labs/formae) · [Hub](https://hub.platform.engineering/platform.engineering/vercel)
+
+## Install
+
+Requires the formae CLI: see the [quick start](https://docs.formae.ai/documentation/get-started/quickstart).
+
+```bash
+formae plugin install vercel
+```
+
+Restart the formae agent afterwards so it loads the plugin.
+
+**New project:** with the agent running, `formae project init --include vercel my-project` creates `my-project` with a `PklProject` that declares the formae and vercel schema packages, so `import "@vercel/..."` resolves, and a starter `main.pkl`. Don't run it in an existing project: it overwrites both files.
+
+**Existing project:** add the plugin to `dependencies` in your `PklProject`, with the current version from the [hub page](https://hub.platform.engineering/platform.engineering/vercel), then run `pkl project resolve`:
+
+```pkl
+["vercel"] {
+  uri = "package://hub.platform.engineering/plugins/vercel/schema/pkl/vercel/vercel@<version>"
+}
+```
+
+Next: [write your first forma](https://docs.formae.ai/documentation/get-started/write-your-first-forma), then [`formae apply`](https://docs.formae.ai/documentation/reference/cli/apply) (see [apply modes](https://docs.formae.ai/documentation/concepts/apply-modes)).
+
+With an AI coding assistant, use the [formae plugin](https://docs.formae.ai/documentation/guides/ai-coding-assistants) (formerly `formae-mcp`), which can search the hub and fetch plugin examples. The formae documentation is also available as [llms.txt](https://docs.formae.ai/llms.txt).
 
 ## Supported Resources
 
